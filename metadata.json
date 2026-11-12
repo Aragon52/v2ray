@@ -1,0 +1,6 @@
+{
+  "name": "Netcon",
+  "description": "An advanced Android VPN client featuring Xray core integration, real-time traffic telemetry, server directory, and Gemini recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
