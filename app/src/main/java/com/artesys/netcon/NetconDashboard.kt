@@ -1611,7 +1611,7 @@ private fun InfoScreen(
         MetalPanel {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 InfoRow("Engine", "Copper Compass · Xray V1.8.16")
-                InfoRow("App Version", "2.4.1")
+                InfoRow("App Version", BuildConfig.VERSION_NAME)
                 InfoRow("Tunnel Service", "${state.uppercase(Locale.ROOT)} · Xray")
                 InfoRow("Active Protocol", protocol.ifBlank { "—" })
                 InfoRow("Active Node", serverName.ifBlank { "—" })
