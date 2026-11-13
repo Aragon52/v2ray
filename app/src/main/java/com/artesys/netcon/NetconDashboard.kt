@@ -78,6 +78,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1285,7 +1289,15 @@ private fun MainChassisCenterControl(
                     ),
                 )
                 .border(1.5.dp, Color(0xFFF8FAFC), CircleShape)
-                .clickable(onClick = onClick)
+                .clickable(
+                    onClickLabel = if (connected || connecting || isError) "Disconnect VPN" else "Connect VPN",
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+                .semantics {
+                    contentDescription = "VPN connection"
+                    stateDescription = statusWord
+                }
                 .padding(7.dp),
         ) {
             Box(
@@ -1320,7 +1332,7 @@ private fun MainChassisCenterControl(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Bolt,
-                        contentDescription = if (connected) "Disconnect VPN" else "Connect VPN",
+                        contentDescription = null,
                         tint = if (connected || connecting) GoldText else Color(0xFFD9822B),
                         modifier = Modifier.size(28.dp),
                     )
