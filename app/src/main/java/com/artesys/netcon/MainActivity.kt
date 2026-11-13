@@ -116,15 +116,8 @@ class MainActivity : ComponentActivity() {
                 onFetchPublicNodes = { countryCode ->
                     withContext(Dispatchers.IO) { NativePublicDirectory.fetch(countryCode) }
                 },
-                onRecommend = { purpose, apiKey, nodes ->
-                    val effectiveKey = apiKey.trim().ifEmpty {
-                        try {
-                            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() && it != "MY_GEMINI_API_KEY" } ?: ""
-                        } catch (_: Throwable) {
-                            ""
-                        }
-                    }
-                    NativeGeminiRecommender.recommend(purpose, effectiveKey, nodes)
+                onRecommend = { purpose, nodes ->
+                    NativeLocalServerRecommender.recommend(purpose, nodes)
                 },
                 onSelectPublicNode = ::selectPublicNode,
                 onConnect = { requestVpnConnection(savedConfig) },

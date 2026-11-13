@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -133,7 +132,7 @@ internal fun NetconDashboard(
     onFeedbackDismiss: () -> Unit,
     onImport: (String) -> Boolean,
     onFetchPublicNodes: suspend (String) -> NativePublicDirectory.Result,
-    onRecommend: suspend (String, String, List<NativePublicDirectory.Node>) -> NativeGeminiRecommender.Recommendation,
+    onRecommend: suspend (String, List<NativePublicDirectory.Node>) -> NativeLocalServerRecommender.Recommendation,
     onSelectPublicNode: (NativePublicDirectory.Node) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -155,14 +154,6 @@ internal fun NetconDashboard(
     var locationDialog by rememberSaveable { mutableStateOf(false) }
     var importText by rememberSaveable { mutableStateOf("") }
     var purpose by rememberSaveable { mutableStateOf("") }
-    val defaultApiKey = remember {
-        try {
-            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() && it != "MY_GEMINI_API_KEY" } ?: ""
-        } catch (_: Throwable) {
-            ""
-        }
-    }
-    var apiKey by remember { mutableStateOf(defaultApiKey) }
     var recommendationMessage by remember { mutableStateOf("") }
     var recommendationBusy by remember { mutableStateOf(false) }
     var dns by rememberSaveable { mutableStateOf("1.1.1.1") }
@@ -229,39 +220,34 @@ internal fun NetconDashboard(
         }
     }
 
-    fun askGemini() {
+    fun findLocalMatch() {
         if (recommendationBusy) return
-        if (apiKey.isBlank()) {
-            recommendationMessage = "Enter your Gemini API key. It stays in this screen session."
-            return
-        }
         if (purpose.isBlank()) {
-            recommendationMessage = "Describe what you want to use the VPN for."
+            recommendationMessage = "Describe your use or preferred country or protocol."
             return
         }
         if (Regex("(?i)^(vmess|vless|trojan|ss)://").containsMatchIn(purpose.trim())) {
-            recommendationMessage = "Paste configuration links into the local import field; credentials are never sent to Gemini."
+            recommendationMessage = "Import server configurations in the local import field instead."
             return
         }
         recommendationBusy = true
         recommendationMessage = "Loading public server metadata…"
-        appendSentinelLog("[AI] Querying public feed metadata for Gemini match…")
+        appendSentinelLog("[LOCAL] Loading public server metadata for local match…")
         coroutineScope.launch {
             try {
-                val result = withTimeout(25_000) { onFetchPublicNodes("") }
+                val countryCode = NativeLocalServerRecommender.countryCodePreference(purpose).orEmpty()
+                val result = withTimeout(25_000) { onFetchPublicNodes(countryCode) }
                 if (result.nodes.isEmpty()) throw IllegalStateException("No supported public servers were found in the top feed.")
-                recommendationMessage = "Asking Gemini to choose from ${minOf(result.nodes.size, 30)} of ${result.nodes.size} public servers…"
-                val recommendation = withTimeout(25_000) {
-                    onRecommend(purpose.trim(), apiKey, result.nodes)
-                }
+                recommendationMessage = "Matching your preferences against ${minOf(result.nodes.size, 30)} of ${result.nodes.size} public servers locally…"
+                val recommendation = onRecommend(purpose.trim(), result.nodes)
                 val selected = result.nodes.firstOrNull { it.id == recommendation.nodeId }
-                    ?: throw IllegalStateException("Gemini selected a server outside the downloaded list.")
+                    ?: throw IllegalStateException("Local matcher selected a server outside the downloaded list.")
                 onSelectPublicNode(selected)
                 recommendationMessage = "${recommendation.reason} Imported locally; tap Main Chassis to connect."
-                appendSentinelLog("[AI] Selected ${selected.name} (${selected.country})")
+                appendSentinelLog("[LOCAL] Selected ${selected.name} (${selected.country})")
             } catch (error: Exception) {
-                recommendationMessage = error.message ?: "Unable to get a Gemini recommendation."
-                appendSentinelLog("[AI] ${recommendationMessage}")
+                recommendationMessage = error.message ?: "Unable to find a local server match."
+                appendSentinelLog("[LOCAL] ${recommendationMessage}")
             } finally {
                 recommendationBusy = false
             }
@@ -337,11 +323,9 @@ internal fun NetconDashboard(
                         onImportTextChange = { importText = it },
                         purpose = purpose,
                         onPurposeChange = { purpose = it },
-                        apiKey = apiKey,
-                        onApiKeyChange = { apiKey = it },
                         recommendationMessage = recommendationMessage,
                         recommendationBusy = recommendationBusy,
-                        onAskGemini = ::askGemini,
+                        onFindLocalMatch = ::findLocalMatch,
                         serverName = serverName,
                         protocol = protocol,
                         serverLocation = serverLocation,
@@ -559,11 +543,9 @@ private fun ConnectionScreen(
     onImportTextChange: (String) -> Unit,
     purpose: String,
     onPurposeChange: (String) -> Unit,
-    apiKey: String,
-    onApiKeyChange: (String) -> Unit,
     recommendationMessage: String,
     recommendationBusy: Boolean,
-    onAskGemini: () -> Unit,
+    onFindLocalMatch: () -> Unit,
     serverName: String,
     protocol: String,
     serverLocation: String,
@@ -894,7 +876,7 @@ private fun ConnectionScreen(
                             )
                             Text(
                                 if (sentinelPaused) "STREAM PAUSED · LOCAL TELEMETRY"
-                                else "XRAY CORE + GEMINI ROUTE ENGINE",
+                                else "XRAY CORE + LOCAL SERVER MATCH",
                                 color = Color(0xFF94A3B8),
                                 fontFamily = JetBrainsMonoFont,
                                 fontSize = 8.sp,
@@ -936,7 +918,7 @@ private fun ConnectionScreen(
                                 val lineColor = when {
                                     line.startsWith("[ERR]") -> Color(0xFFFCA5A5)
                                     line.startsWith("[VPN]") -> Color(0xFF4ADE80)
-                                    line.startsWith("[AI]") -> Color(0xFFFCD34D)
+                                    line.startsWith("[LOCAL]") -> Color(0xFFFCD34D)
                                     line.startsWith("[PING]") -> CyanGauge
                                     else -> Color(0xFFCBD5E1)
                                 }
@@ -976,7 +958,7 @@ private fun ConnectionScreen(
                                 modifier = Modifier.size(15.dp),
                             )
                             Text(
-                                "IMPORT CONFIG & GEMINI ROUTE MATCHER",
+                                "IMPORT CONFIG & LOCAL SERVER MATCH",
                                 color = Color(0xFFE2E8F0),
                                 fontFamily = JetBrainsMonoFont,
                                 fontSize = 9.sp,
@@ -985,7 +967,7 @@ private fun ConnectionScreen(
                         }
                         Icon(
                             imageVector = if (showToolsDrawer) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = "Toggle import and Gemini tools",
+                            contentDescription = "Toggle import and local server matching tools",
                             tint = Color(0xFF94A3B8),
                             modifier = Modifier.size(18.dp),
                         )
@@ -1024,10 +1006,10 @@ private fun ConnectionScreen(
                             RecessedInput(
                                 value = purpose,
                                 onValueChange = onPurposeChange,
-                                placeholder = "Purpose for Gemini route, e.g. gaming or 4K streaming",
+                                placeholder = "Country or protocol preference, e.g. Singapore or VLESS",
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("PUBG Mobile", "YouTube 4K", "Anti-Censorship").forEach { label ->
+                                listOf("Singapore", "VLESS", "United States").forEach { label ->
                                     Keycap(
                                         label = label,
                                         modifier = Modifier.weight(1f),
@@ -1035,18 +1017,12 @@ private fun ConnectionScreen(
                                     ) { onPurposeChange(label) }
                                 }
                             }
-                            RecessedInput(
-                                value = apiKey,
-                                onValueChange = onApiKeyChange,
-                                placeholder = "Gemini API key · session only",
-                                secure = true,
-                            )
                             CopperButton(
-                                label = if (recommendationBusy) "ASKING GEMINI…" else "ASK GEMINI · FIND FREE SERVER",
+                                label = if (recommendationBusy) "MATCHING LOCALLY…" else "LOCAL MATCH · FIND PUBLIC SERVER",
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .testTag("ask_gemini_button"),
-                                onClick = onAskGemini,
+                                    .testTag("local_server_match_button"),
+                                onClick = onFindLocalMatch,
                             )
                             if (recommendationMessage.isNotBlank()) {
                                 Text(
