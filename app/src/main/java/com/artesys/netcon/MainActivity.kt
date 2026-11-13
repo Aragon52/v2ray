@@ -11,8 +11,8 @@ import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     private var serverLongitude by mutableStateOf<Double?>(null)
     private var feedback by mutableStateOf("")
     private var pendingConfig = ""
+    private lateinit var vpnPermissionLauncher: ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,18 +81,19 @@ class MainActivity : ComponentActivity() {
             serverLatitude = storedLat
             serverLongitude = storedLon
         }
+        vpnPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) { result ->
+            val config = pendingConfig
+            pendingConfig = ""
+            if (result.resultCode == Activity.RESULT_OK && config.isNotBlank()) {
+                startVpn(config)
+            } else {
+                feedback = "Android VPN permission was not granted. Tap Connect to try again."
+            }
+        }
         setContent {
             NetconTheme {
-                val permissionLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult(),
-                ) { result ->
-                    if (result.resultCode == Activity.RESULT_OK && pendingConfig.isNotBlank()) {
-                        startVpn(pendingConfig)
-                    } else {
-                        feedback = "Android VPN permission was not granted."
-                    }
-                    pendingConfig = ""
-                }
                 NetconDashboard(
                     serverName = savedName,
                     protocol = protocolName(savedConfig),
@@ -125,30 +127,11 @@ class MainActivity : ComponentActivity() {
                     NativeGeminiRecommender.recommend(purpose, effectiveKey, nodes)
                 },
                 onSelectPublicNode = ::selectPublicNode,
-                onConnect = {
-                    if (savedConfig.isBlank()) {
-                        feedback = "Import a server configuration before connecting."
-                    } else {
-                        val permissionIntent = VpnService.prepare(this)
-                        if (permissionIntent == null) {
-                            startVpn(savedConfig)
-                        } else {
-                            pendingConfig = savedConfig
-                            permissionLauncher.launch(permissionIntent)
-                        }
-                    }
-                },
+                onConnect = { requestVpnConnection(savedConfig) },
                 onDisconnect = { disconnectVpn() },
                 onBlockedProtocol = { feedback = "Enable this server protocol in Settings before connecting." },
                 onStartConfigured = { dnsAddress, routingMode ->
-                    val config = configuredXrayJson(savedConfig, dnsAddress, routingMode)
-                    val permissionIntent = VpnService.prepare(this)
-                    if (permissionIntent == null) {
-                        startVpn(config)
-                    } else {
-                        pendingConfig = config
-                        permissionLauncher.launch(permissionIntent)
-                    }
+                    requestVpnConnection(configuredXrayJson(savedConfig, dnsAddress, routingMode))
                 },
                 onOpenVpnSettings = {
                     try {
@@ -274,6 +257,26 @@ class MainActivity : ComponentActivity() {
             feedback = ""
         } catch (error: Exception) {
             feedback = error.message ?: "Unable to start the Android VPN service."
+        }
+    }
+
+    private fun requestVpnConnection(config: String) {
+        if (config.isBlank()) {
+            feedback = "Import a server configuration before connecting."
+            return
+        }
+        try {
+            val permissionIntent = VpnService.prepare(this)
+            if (permissionIntent == null) {
+                startVpn(config)
+            } else {
+                pendingConfig = config
+                feedback = "Waiting for Android VPN permission…"
+                vpnPermissionLauncher.launch(permissionIntent)
+            }
+        } catch (error: Exception) {
+            pendingConfig = ""
+            feedback = error.message ?: "Unable to request Android VPN permission."
         }
     }
 
