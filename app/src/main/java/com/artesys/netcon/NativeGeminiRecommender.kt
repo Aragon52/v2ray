@@ -55,7 +55,14 @@ internal object NativeGeminiRecommender {
                     output.write(requestBody.toString().toByteArray(StandardCharsets.UTF_8))
                 }
                 val status = connection.responseCode
-                if (status !in 200..299) throw IllegalStateException("Gemini request failed with HTTP $status.")
+                if (status !in 200..299) {
+                    val errorBody = connection.errorStream?.use { stream ->
+                        val buffer = ByteArray(MAX_ERROR_BODY_LENGTH)
+                        val count = stream.read(buffer)
+                        if (count > 0) String(buffer, 0, count, StandardCharsets.UTF_8) else ""
+                    }.orEmpty()
+                    throw IllegalStateException(formatHttpError(status, errorBody, trimmedKey))
+                }
                 val responseText = connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { reader ->
                     val text = reader.readText()
                     if (text.length > 100_000) throw IllegalStateException("Gemini response exceeded the size limit.")
@@ -66,6 +73,23 @@ internal object NativeGeminiRecommender {
                 connection.disconnect()
             }
         }
+
+    internal fun formatHttpError(status: Int, responseBody: String, apiKey: String): String {
+        val apiMessage = try {
+            JSONObject(responseBody).optJSONObject("error")?.optString("message").orEmpty()
+        } catch (_: org.json.JSONException) {
+            ""
+        }
+        val safeMessage = (if (apiKey.isNotEmpty()) apiMessage.replace(apiKey, "[redacted]") else apiMessage)
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_ERROR_MESSAGE_LENGTH)
+        return if (safeMessage.isBlank()) {
+            "Gemini request failed with HTTP $status."
+        } else {
+            "Gemini request failed with HTTP $status: $safeMessage"
+        }
+    }
 
     internal fun parseRecommendation(
         responseText: String,
@@ -99,4 +123,7 @@ internal object NativeGeminiRecommender {
             reason.ifBlank { "Recommended from the available server metadata." },
         )
     }
+
+    private const val MAX_ERROR_BODY_LENGTH = 8_192
+    private const val MAX_ERROR_MESSAGE_LENGTH = 500
 }

@@ -323,8 +323,7 @@ internal fun NetconDashboard(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Header plate matching Design #2
-                MetallicHeaderPlate()
+                DashboardLogoCard()
 
                 // Three top navigation pills matching Design #2
                 DesignTwoNavigation(
@@ -465,75 +464,16 @@ internal fun NetconDashboard(
 }
 
 @Composable
-private fun MetallicHeaderPlate() {
-    Box(
+private fun DashboardLogoCard() {
+    Image(
+        painter = painterResource(R.drawable.dashboard_logo_card),
+        contentDescription = "AI V2Ray Client logo card",
+        contentScale = ContentScale.FillBounds,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFFE7EBEE),
-                        Color(0xFFDCE1E6),
-                        Color(0xFFEBD9E0), // subtle holographic copper-rose sheen
-                        Color(0xFFD1D8DF),
-                    ),
-                ),
-            )
-            .border(1.5.dp, SilverBorderLight, RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-    ) {
-        // Corner slotted screw heads matching Design #2
-        ScrewHead(Modifier.align(Alignment.TopStart), angle = 35f)
-        ScrewHead(Modifier.align(Alignment.TopEnd), angle = -40f)
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            Brush.verticalGradient(listOf(Color(0xFFF9D98C), Color(0xFFD08328))),
-                        )
-                        .border(1.dp, Color(0xFF7A4A12), RoundedCornerShape(6.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Shield,
-                        contentDescription = "AI V2Ray Client Shield",
-                        tint = Color(0xFF231405),
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-                Text(
-                    "AI V2RAY CLIENT",
-                    color = Color(0xFFC87D1D),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp,
-                )
-            }
-            Text(
-                "COPPER COMPASS ENGINE • XRAY CORE V1.8.16",
-                color = DarkInk,
-                fontFamily = JetBrainsMonoFont,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
+            .aspectRatio(390f / 118f)
+            .clip(RoundedCornerShape(12.dp)),
+    )
 }
 
 @Composable

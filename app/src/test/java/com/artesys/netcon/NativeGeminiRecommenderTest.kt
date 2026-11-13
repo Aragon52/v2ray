@@ -39,6 +39,25 @@ class NativeGeminiRecommenderTest {
         }
     }
 
+    @Test
+    fun reportsGeminiHttpErrorDetailsWithoutLeakingApiKey() {
+        val message = NativeGeminiRecommender.formatHttpError(
+            400,
+            """{"error":{"message":"Invalid request for key secret-key"}}""",
+            "secret-key",
+        )
+
+        assertEquals("Gemini request failed with HTTP 400: Invalid request for key [redacted]", message)
+    }
+
+    @Test
+    fun fallsBackToStatusWhenGeminiErrorBodyIsNotJson() {
+        assertEquals(
+            "Gemini request failed with HTTP 400.",
+            NativeGeminiRecommender.formatHttpError(400, "bad request", "secret-key"),
+        )
+    }
+
     private fun node(id: String, protocol: String) = NativePublicDirectory.Node(
         id = id,
         name = protocol,
