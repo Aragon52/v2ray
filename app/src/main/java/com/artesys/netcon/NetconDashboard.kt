@@ -664,6 +664,55 @@ private fun ConnectionScreen(
                 .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            val statusLabel = when (state) {
+                "connected" -> "ONLINE"
+                "connecting" -> "CONNECTING"
+                "error" -> "ATTENTION"
+                else -> "OFFLINE"
+            }
+            val statusColor = when (state) {
+                "connected" -> EmeraldOnline
+                "connecting" -> GoldAccent
+                "error" -> Color(0xFFDC2626)
+                else -> DarkInkMuted
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "LIVE TELEMETRY",
+                    color = DarkInk,
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.7.sp,
+                )
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(statusColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(7.dp)
+                            .background(statusColor, CircleShape),
+                    )
+                    Text(
+                        statusLabel,
+                        color = statusColor,
+                        fontFamily = JetBrainsMonoFont,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.4.sp,
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -697,7 +746,7 @@ private fun ConnectionScreen(
 
                 val totalRate = downloadMbps + uploadMbps
                 DesignTwoGauge(
-                    topLabel = "MB/S RATE",
+                    topLabel = "Mbps TOTAL",
                     value = "%.1f".format(totalRate),
                     bottomLabel = "BANDWIDTH",
                     progress = (totalRate / 50.0).toFloat().coerceIn(0f, 1f),
