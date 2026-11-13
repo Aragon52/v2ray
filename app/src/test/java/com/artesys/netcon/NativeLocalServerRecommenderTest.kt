@@ -12,69 +12,83 @@ import org.robolectric.annotation.Config
 @Config(manifest = Config.NONE)
 class NativeLocalServerRecommenderTest {
     private val nodes = listOf(
-        node("node-hk", "vless", "HK", "Hong Kong"),
-        node("node-sg", "vmess", "SG", "Singapore"),
-        node("node-us", "vless", "US", "United States"),
+        node("node-hk", "HK"),
+        node("node-sg", "SG"),
+        node("node-us", "US"),
     )
 
     @Test
-    fun matchesExplicitCountryPreference() {
-        val recommendation = NativeLocalServerRecommender.recommend("Connect through Singapore", nodes)
+    fun ordersDirectoryRegionsByDistanceFromPinnedLocation() {
+        assertEquals(
+            "SG",
+            NativeLocalServerRecommender.nearestCountryCodes(1.3521, 103.8198).first(),
+        )
+        assertEquals(
+            "US",
+            NativeLocalServerRecommender.nearestCountryCodes(39.0438, -77.4874).first(),
+        )
+    }
+
+    @Test
+    fun selectsClosestAvailableRegionAndIncludesActivityCaveat() {
+        val recommendation = NativeLocalServerRecommender.recommend(
+            activity = "Gaming",
+            userLatitude = 1.3521,
+            userLongitude = 103.8198,
+            nodes = nodes,
+        )
 
         assertEquals("node-sg", recommendation.nodeId)
-        assertTrue(recommendation.reason.contains("Singapore"))
+        assertTrue(recommendation.reason.contains("Gaming"))
+        assertTrue(recommendation.reason.contains("approximate region hub"))
+        assertTrue(recommendation.reason.contains("exact server location, latency"))
     }
 
     @Test
-    fun extractsCountryForCountrySpecificDirectoryFetch() {
-        assertEquals("SG", NativeLocalServerRecommender.countryCodePreference("Connect through Singapore"))
-        assertEquals("GB", NativeLocalServerRecommender.countryCodePreference("Use the UK"))
-        assertEquals(null, NativeLocalServerRecommender.countryCodePreference("PUBG Mobile"))
-    }
-
-    @Test
-    fun matchesExplicitProtocolPreference() {
-        val recommendation = NativeLocalServerRecommender.recommend("I prefer VLESS", nodes)
-
-        assertEquals("node-hk", recommendation.nodeId)
-        assertTrue(recommendation.reason.contains("VLESS"))
-    }
-
-    @Test
-    fun prefersCountryAndProtocolWhenBothMatch() {
-        val recommendation = NativeLocalServerRecommender.recommend("VLESS in the United States", nodes)
-
-        assertEquals("node-us", recommendation.nodeId)
-        assertTrue(recommendation.reason.contains("United States"))
-        assertTrue(recommendation.reason.contains("VLESS"))
-    }
-
-    @Test
-    fun explainsWhenPurposeHasNoMatchableMetadata() {
-        val recommendation = NativeLocalServerRecommender.recommend("PUBG Mobile", nodes)
-
-        assertEquals("node-hk", recommendation.nodeId)
-        assertTrue(recommendation.reason.contains("No requested country or protocol matched"))
-        assertTrue(recommendation.reason.contains("unmeasured"))
-    }
-
-    @Test
-    fun rejectsEmptyPurposeAndConfigurationLinks() {
-        assertThrows(IllegalArgumentException::class.java) {
-            NativeLocalServerRecommender.recommend("  ", nodes)
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            NativeLocalServerRecommender.recommend("vless://sensitive-config", nodes)
-        }
-    }
-
-    private fun node(id: String, protocol: String, countryCode: String, country: String) =
-        NativePublicDirectory.Node(
-            id = id,
-            name = protocol,
-            protocol = protocol,
-            country = country,
-            countryCode = countryCode,
-            configJson = "{}",
+    fun streamingRecommendationDisclosesMissingCapacityData() {
+        val recommendation = NativeLocalServerRecommender.recommend(
+            activity = "Streaming",
+            userLatitude = 1.3521,
+            userLongitude = 103.8198,
+            nodes = nodes,
         )
+
+        assertTrue(recommendation.reason.contains("Streaming"))
+        assertTrue(recommendation.reason.contains("capacity is not provided"))
+    }
+
+    @Test
+    fun unknownServerRegionFallsBackToFirstEntryWithWarning() {
+        val recommendation = NativeLocalServerRecommender.recommend(
+            activity = "Video calls",
+            userLatitude = 1.3521,
+            userLongitude = 103.8198,
+            nodes = listOf(node("unknown", "ZZ")),
+        )
+
+        assertEquals("unknown", recommendation.nodeId)
+        assertTrue(recommendation.reason.contains("location is unknown"))
+    }
+
+    @Test
+    fun rejectsInvalidInputs() {
+        assertThrows(IllegalArgumentException::class.java) {
+            NativeLocalServerRecommender.nearestCountryCodes(91.0, 0.0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            NativeLocalServerRecommender.recommend("Other", 0.0, 0.0, nodes)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            NativeLocalServerRecommender.recommend("Gaming", 0.0, 0.0, emptyList())
+        }
+    }
+
+    private fun node(id: String, countryCode: String) = NativePublicDirectory.Node(
+        id = id,
+        name = "server-$id",
+        protocol = "vless",
+        country = countryCode,
+        countryCode = countryCode,
+        configJson = "{}",
+    )
 }

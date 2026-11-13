@@ -91,6 +91,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.util.Locale
@@ -127,12 +129,15 @@ internal fun NetconDashboard(
     serverLocation: String,
     serverLatitude: Double?,
     serverLongitude: Double?,
+    userLatitude: Double?,
+    userLongitude: Double?,
     onSaveLocation: (String, Double, Double) -> Unit,
+    onSaveUserLocation: (Double, Double) -> Unit,
     feedback: String,
     onFeedbackDismiss: () -> Unit,
     onImport: (String) -> Boolean,
     onFetchPublicNodes: suspend (String) -> NativePublicDirectory.Result,
-    onRecommend: suspend (String, List<NativePublicDirectory.Node>) -> NativeLocalServerRecommender.Recommendation,
+    onRecommend: suspend (String, Double, Double, List<NativePublicDirectory.Node>) -> NativeLocalServerRecommender.Recommendation,
     onSelectPublicNode: (NativePublicDirectory.Node) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -153,7 +158,11 @@ internal fun NetconDashboard(
     var serverDialogCountry by rememberSaveable { mutableStateOf("") }
     var locationDialog by rememberSaveable { mutableStateOf(false) }
     var importText by rememberSaveable { mutableStateOf("") }
-    var purpose by rememberSaveable { mutableStateOf("") }
+    var savedActivity by rememberSaveable {
+        mutableStateOf(NativeLocalServerRecommender.activities.first())
+    }
+    val activity = savedActivity.takeIf { it in NativeLocalServerRecommender.activities }
+        ?: NativeLocalServerRecommender.activities.first()
     var recommendationMessage by remember { mutableStateOf("") }
     var recommendationBusy by remember { mutableStateOf(false) }
     var dns by rememberSaveable { mutableStateOf("1.1.1.1") }
@@ -222,25 +231,51 @@ internal fun NetconDashboard(
 
     fun findLocalMatch() {
         if (recommendationBusy) return
-        if (purpose.isBlank()) {
-            recommendationMessage = "Describe your use or preferred country or protocol."
+        val originLatitude = userLatitude
+        val originLongitude = userLongitude
+        if (originLatitude == null || originLongitude == null) {
+            recommendationMessage = "Pin your location on the map before finding a nearby server."
             return
         }
-        if (Regex("(?i)^(vmess|vless|trojan|ss)://").containsMatchIn(purpose.trim())) {
-            recommendationMessage = "Import server configurations in the local import field instead."
-            return
-        }
+        val selectedActivity = activity
         recommendationBusy = true
-        recommendationMessage = "Loading public server metadata…"
-        appendSentinelLog("[LOCAL] Loading public server metadata for local match…")
+        recommendationMessage = "Checking public server metadata for nearby regions…"
+        appendSentinelLog("[LOCAL] Checking nearby public server regions for $selectedActivity…")
         coroutineScope.launch {
             try {
-                val countryCode = NativeLocalServerRecommender.countryCodePreference(purpose).orEmpty()
-                val result = withTimeout(25_000) { onFetchPublicNodes(countryCode) }
-                if (result.nodes.isEmpty()) throw IllegalStateException("No supported public servers were found in the top feed.")
-                recommendationMessage = "Matching your preferences against ${minOf(result.nodes.size, 30)} of ${result.nodes.size} public servers locally…"
-                val recommendation = onRecommend(purpose.trim(), result.nodes)
-                val selected = result.nodes.firstOrNull { it.id == recommendation.nodeId }
+                var result: NativePublicDirectory.Result? = null
+                val failures = mutableListOf<String>()
+                for (countryCode in NativeLocalServerRecommender.nearestCountryCodes(
+                    originLatitude,
+                    originLongitude,
+                )) {
+                    try {
+                        val candidate = withTimeout(20_000) { onFetchPublicNodes(countryCode) }
+                        if (candidate.nodes.isNotEmpty()) {
+                            result = candidate
+                            break
+                        }
+                        failures += "$countryCode: no supported servers in feed"
+                    } catch (error: TimeoutCancellationException) {
+                        failures += "$countryCode: feed request timed out"
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        failures += "$countryCode: ${error.message ?: "feed request failed"}"
+                    }
+                }
+                val available = result
+                    ?: throw IllegalStateException(
+                        failures.joinToString("; ").ifBlank { "No public servers were found in nearby regions." },
+                    )
+                recommendationMessage = "Comparing ${minOf(available.nodes.size, 30)} public servers locally…"
+                val recommendation = onRecommend(
+                    selectedActivity,
+                    originLatitude,
+                    originLongitude,
+                    available.nodes,
+                )
+                val selected = available.nodes.firstOrNull { it.id == recommendation.nodeId }
                     ?: throw IllegalStateException("Local matcher selected a server outside the downloaded list.")
                 onSelectPublicNode(selected)
                 recommendationMessage = "${recommendation.reason} Imported locally; tap Main Chassis to connect."
@@ -321,8 +356,8 @@ internal fun NetconDashboard(
                     DashboardTab.Connection -> ConnectionScreen(
                         importText = importText,
                         onImportTextChange = { importText = it },
-                        purpose = purpose,
-                        onPurposeChange = { purpose = it },
+                        activity = activity,
+                        onActivityChange = { savedActivity = it },
                         recommendationMessage = recommendationMessage,
                         recommendationBusy = recommendationBusy,
                         onFindLocalMatch = ::findLocalMatch,
@@ -351,6 +386,9 @@ internal fun NetconDashboard(
                         },
                         onSetLocation = { locationDialog = true },
                         onSaveLocation = onSaveLocation,
+                        userLatitude = userLatitude,
+                        userLongitude = userLongitude,
+                        onSaveUserLocation = onSaveUserLocation,
                         onImport = { raw ->
                             if (onImport(raw)) {
                                 appendSentinelLog("[CFG] Imported local configuration")
@@ -541,8 +579,8 @@ private fun DesignTwoNavigation(current: DashboardTab, onSelect: (DashboardTab) 
 private fun ConnectionScreen(
     importText: String,
     onImportTextChange: (String) -> Unit,
-    purpose: String,
-    onPurposeChange: (String) -> Unit,
+    activity: String,
+    onActivityChange: (String) -> Unit,
     recommendationMessage: String,
     recommendationBusy: Boolean,
     onFindLocalMatch: () -> Unit,
@@ -570,6 +608,9 @@ private fun ConnectionScreen(
     onOpenServers: (String) -> Unit,
     onSetLocation: () -> Unit,
     onSaveLocation: (String, Double, Double) -> Unit,
+    userLatitude: Double?,
+    userLongitude: Double?,
+    onSaveUserLocation: (Double, Double) -> Unit,
     onImport: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -822,10 +863,13 @@ private fun ConnectionScreen(
             locationName = serverLocation,
             latitude = serverLatitude,
             longitude = serverLongitude,
+            userLatitude = userLatitude,
+            userLongitude = userLongitude,
             vpnState = state,
             onSetLocation = onSetLocation,
             onBrowseCountryServers = { code -> onOpenServers(code) },
             onSaveCoordinates = onSaveLocation,
+            onSaveUserLocation = onSaveUserLocation,
         )
 
         // 4. AI Live Sentinel Stream Card matching Design #2
@@ -1003,20 +1047,27 @@ private fun ConnectionScreen(
                                     .background(Color(0xFF1F3647)),
                             )
 
-                            RecessedInput(
-                                value = purpose,
-                                onValueChange = onPurposeChange,
-                                placeholder = "Country or protocol preference, e.g. Singapore or VLESS",
+                            Text(
+                                "ACTIVITY PROFILE · LOCAL DISTANCE MATCH",
+                                color = Color(0xFF9FB2C4),
+                                fontFamily = JetBrainsMonoFont,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("Singapore", "VLESS", "United States").forEach { label ->
+                                NativeLocalServerRecommender.activities.forEach { label ->
                                     Keycap(
                                         label = label,
                                         modifier = Modifier.weight(1f),
-                                        selected = purpose == label,
-                                    ) { onPurposeChange(label) }
+                                        selected = activity == label,
+                                    ) { onActivityChange(label) }
                                 }
                             }
+                            Text(
+                                "Uses approximate region distance only; server latency and streaming capacity are not provided.",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 10.sp,
+                            )
                             CopperButton(
                                 label = if (recommendationBusy) "MATCHING LOCALLY…" else "LOCAL MATCH · FIND PUBLIC SERVER",
                                 modifier = Modifier

@@ -39,6 +39,8 @@ class MainActivity : ComponentActivity() {
     private var serverLocation by mutableStateOf("")
     private var serverLatitude by mutableStateOf<Double?>(null)
     private var serverLongitude by mutableStateOf<Double?>(null)
+    private var userLatitude by mutableStateOf<Double?>(null)
+    private var userLongitude by mutableStateOf<Double?>(null)
     private var feedback by mutableStateOf("")
     private var pendingConfig = ""
     private lateinit var vpnPermissionLauncher: ActivityResultLauncher<Intent>
@@ -81,6 +83,8 @@ class MainActivity : ComponentActivity() {
             serverLatitude = storedLat
             serverLongitude = storedLon
         }
+        userLatitude = preferences.getString("user_latitude", null)?.toDoubleOrNull()
+        userLongitude = preferences.getString("user_longitude", null)?.toDoubleOrNull()
         vpnPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult(),
         ) { result ->
@@ -100,6 +104,8 @@ class MainActivity : ComponentActivity() {
                 serverLocation = serverLocation,
                 serverLatitude = serverLatitude,
                 serverLongitude = serverLongitude,
+                userLatitude = userLatitude,
+                userLongitude = userLongitude,
                 onSaveLocation = { name, latitude, longitude ->
                     serverLocation = name
                     serverLatitude = latitude
@@ -110,14 +116,22 @@ class MainActivity : ComponentActivity() {
                         .putString("server_longitude", longitude.toString())
                         .apply()
                 },
+                onSaveUserLocation = { latitude, longitude ->
+                    userLatitude = latitude
+                    userLongitude = longitude
+                    preferences.edit()
+                        .putString("user_latitude", latitude.toString())
+                        .putString("user_longitude", longitude.toString())
+                        .apply()
+                },
                 feedback = feedback,
                 onFeedbackDismiss = { feedback = "" },
                 onImport = ::importConfiguration,
                 onFetchPublicNodes = { countryCode ->
                     withContext(Dispatchers.IO) { NativePublicDirectory.fetch(countryCode) }
                 },
-                onRecommend = { purpose, nodes ->
-                    NativeLocalServerRecommender.recommend(purpose, nodes)
+                onRecommend = { activity, latitude, longitude, nodes ->
+                    NativeLocalServerRecommender.recommend(activity, latitude, longitude, nodes)
                 },
                 onSelectPublicNode = ::selectPublicNode,
                 onConnect = { requestVpnConnection(savedConfig) },

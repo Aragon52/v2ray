@@ -213,10 +213,13 @@ internal fun ProtonWorldMapPanel(
     locationName: String,
     latitude: Double?,
     longitude: Double?,
+    userLatitude: Double?,
+    userLongitude: Double?,
     vpnState: String,
     onSetLocation: () -> Unit,
     onBrowseCountryServers: (String) -> Unit,
     onSaveCoordinates: (String, Double, Double) -> Unit,
+    onSaveUserLocation: (Double, Double) -> Unit,
 ) {
     val context = LocalContext.current
     val countries by produceState<List<VectorCountry>>(initialValue = emptyList()) {
@@ -229,6 +232,7 @@ internal fun ProtonWorldMapPanel(
 
     var selectedHub by remember { mutableStateOf<MapHubNode?>(null) }
     var showFullMap by rememberSaveable { mutableStateOf(false) }
+    var showUserLocationMap by rememberSaveable { mutableStateOf(false) }
 
     // Camera state: zoom = 1f fits full world; panX/panY in [0..1] normalized map space for viewport center
     var targetZoom by rememberSaveable { mutableFloatStateOf(1.15f) }
@@ -361,6 +365,8 @@ internal fun ProtonWorldMapPanel(
                 inspectedCountryCode = selectedHub?.code,
                 activeLat = latitude,
                 activeLon = longitude,
+                userPinLat = userLatitude,
+                userPinLon = userLongitude,
                 vpnState = vpnState,
                 zoom = animZoom,
                 centerX = animCenterX,
@@ -573,6 +579,73 @@ internal fun ProtonWorldMapPanel(
                     .clickable(onClick = onSetLocation),
             )
         }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0A1017))
+                .border(1.dp, Color(0xFF47525E), RoundedCornerShape(8.dp))
+                .padding(horizontal = 11.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "YOUR LOCATION",
+                    color = NetconColors.TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    if (userLatitude != null && userLongitude != null) {
+                        "%.4f°, %.4f°".format(userLatitude, userLongitude)
+                    } else {
+                        "Not set · choose your origin on the map"
+                    },
+                    color = NetconColors.CyberCyan,
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .testTag("user_location_map_button")
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(NetconColors.PanelElevated)
+                    .border(1.dp, NetconColors.CyberCyan, RoundedCornerShape(6.dp))
+                    .clickable { showUserLocationMap = true }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    if (userLatitude != null && userLongitude != null) "CHANGE PIN" else "PIN ON MAP",
+                    color = NetconColors.CyberCyan,
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+
+    if (showUserLocationMap) {
+        FullProtonMapDialog(
+            countries = countries,
+            serverName = "Your location",
+            initialLocationName = "Your location",
+            initialLat = userLatitude,
+            initialLon = userLongitude,
+            vpnState = vpnState,
+            isUserLocationPicker = true,
+            onDismiss = { showUserLocationMap = false },
+            onBrowseCountryServers = {},
+            onSaveCoordinates = { _, lat, lon ->
+                onSaveUserLocation(lat, lon)
+                showUserLocationMap = false
+            },
+        )
     }
 
     if (showFullMap) {
@@ -610,6 +683,8 @@ private fun WorldVectorCanvas(
     onTransform: (zoomFactor: Float, panDelta: Offset, size: IntSize) -> Unit,
     onHubTapped: (MapHubNode) -> Unit,
     onBackgroundTapped: (Pair<Double, Double>) -> Unit,
+    userPinLat: Double? = null,
+    userPinLon: Double? = null,
 ) {
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -762,6 +837,22 @@ private fun WorldVectorCanvas(
             }
         }
 
+        if (userPinLat != null && userPinLon != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val mapW = size.width * zoom
+                val mapH = mapW / 1.607f
+                val originX = size.width / 2f - centerX * mapW
+                val originY = size.height / 2f - centerY * mapH
+                val (nx, ny) = projectNormalized(userPinLat, userPinLon)
+                val point = Offset(originX + nx * mapW, originY + ny * mapH)
+                if (point.x in -12f..size.width + 12f && point.y in -12f..size.height + 12f) {
+                    drawCircle(Color(0xFF06131A), 8.dp.toPx(), point)
+                    drawCircle(NetconColors.CyberCyan, 5.dp.toPx(), point)
+                    drawCircle(Color.White, 2.dp.toPx(), point)
+                }
+            }
+        }
+
         // Lightweight animated beacon & tunnel arc overlay
         if (activeLat != null && activeLon != null) {
             AnimatedBeaconOverlay(
@@ -907,6 +998,7 @@ private fun FullProtonMapDialog(
     initialLat: Double?,
     initialLon: Double?,
     vpnState: String,
+    isUserLocationPicker: Boolean = false,
     onDismiss: () -> Unit,
     onBrowseCountryServers: (String) -> Unit,
     onSaveCoordinates: (String, Double, Double) -> Unit,
@@ -949,13 +1041,17 @@ private fun FullProtonMapDialog(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "WORLD SERVER MAP",
+                        if (isUserLocationPicker) "PIN YOUR LOCATION" else "WORLD SERVER MAP",
                         color = NetconColors.TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "Pinch to zoom · Tap a country hub or tap anywhere to pin coordinates",
+                        if (isUserLocationPicker) {
+                            "Tap to place your pin · no GPS permission needed; only region codes are fetched"
+                        } else {
+                            "Pinch to zoom · Tap a country hub or tap anywhere to pin coordinates"
+                        },
                         color = NetconColors.TextSecondary,
                         fontSize = 11.sp,
                     )
@@ -1057,8 +1153,12 @@ private fun FullProtonMapDialog(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        pickedHub?.let { "${it.countryName} (${it.code})" }
-                            ?: serverName.ifBlank { "Custom Map Pin" },
+                        if (isUserLocationPicker) {
+                            "Your location"
+                        } else {
+                            pickedHub?.let { "${it.countryName} (${it.code})" }
+                                ?: serverName.ifBlank { "Custom Map Pin" }
+                        },
                         color = NetconColors.TextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -1078,7 +1178,7 @@ private fun FullProtonMapDialog(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    pickedHub?.let { hub ->
+                    pickedHub?.takeUnless { isUserLocationPicker }?.let { hub ->
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(7.dp))
@@ -1111,7 +1211,7 @@ private fun FullProtonMapDialog(
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                         ) {
                             Text(
-                                "USE PIN",
+                                if (isUserLocationPicker) "SAVE LOCATION" else "USE PIN",
                                 color = Color(0xFF1D0E05),
                                 fontFamily = JetBrainsMonoFont,
                                 fontSize = 10.sp,
