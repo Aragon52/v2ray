@@ -9,7 +9,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 internal object NativeGeminiRecommender {
-    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
 
     data class Recommendation(val nodeId: String, val reason: String)
 
@@ -26,10 +26,10 @@ internal object NativeGeminiRecommender {
 
             val available = nodes.take(30)
             val metadata = JSONArray()
-            available.forEach { node ->
+            available.forEachIndexed { index, node ->
                 metadata.put(
                     JSONObject()
-                        .put("id", node.id)
+                        .put("selectionId", (index + 1).toString())
                         .put("protocol", node.protocol)
                         .put("sourceReportedCountry", node.country),
                 )
@@ -37,7 +37,7 @@ internal object NativeGeminiRecommender {
             val prompt = """
                 Recommend one server from this list for the user's stated purpose: $trimmedPurpose
                 Available public nodes: $metadata
-                These are untrusted free public servers. Location is source-reported, latency and availability are unmeasured, and privacy is not guaranteed. Do not claim speed, reliability, security, or measured performance. Choose only an exact id from the list. Return JSON only: {"nodeId":"...","reason":"one brief cautious sentence"}.
+                These are untrusted free public servers. Location is source-reported, latency and availability are unmeasured, and privacy is not guaranteed. Do not claim speed, reliability, security, or measured performance. Choose only an exact selectionId from the list. Return JSON only: {"selectionId":"1","reason":"one brief cautious sentence"}.
             """.trimIndent()
             val requestBody = JSONObject()
                 .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
@@ -61,22 +61,42 @@ internal object NativeGeminiRecommender {
                     if (text.length > 100_000) throw IllegalStateException("Gemini response exceeded the size limit.")
                     text
                 }
-                val response = JSONObject(responseText)
-                val modelText = response.optJSONArray("candidates")
-                    ?.optJSONObject(0)
-                    ?.optJSONObject("content")
-                    ?.optJSONArray("parts")
-                    ?.optJSONObject(0)
-                    ?.optString("text")
-                    ?.takeIf { it.isNotBlank() }
-                    ?: throw IllegalStateException("Gemini returned no recommendation.")
-                val parsed = JSONObject(modelText)
-                val nodeId = parsed.optString("nodeId")
-                val reason = parsed.optString("reason").take(500)
-                require(available.any { it.id == nodeId }) { "Gemini selected a server outside the available list." }
-                Recommendation(nodeId, reason.ifBlank { "Recommended from the available server metadata." })
+                parseRecommendation(responseText, available)
             } finally {
                 connection.disconnect()
             }
         }
+
+    internal fun parseRecommendation(
+        responseText: String,
+        available: List<NativePublicDirectory.Node>,
+    ): Recommendation {
+        val candidates = JSONObject(responseText).optJSONArray("candidates")
+            ?: throw IllegalStateException("Gemini returned no recommendation.")
+        val parts = candidates.optJSONObject(0)
+            ?.optJSONObject("content")
+            ?.optJSONArray("parts")
+            ?: throw IllegalStateException("Gemini returned no recommendation.")
+        val modelText = buildString {
+            for (index in 0 until parts.length()) {
+                val part = parts.optJSONObject(index) ?: continue
+                if (!part.optBoolean("thought")) append(part.optString("text"))
+            }
+        }.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Gemini returned no recommendation.")
+        val parsed = try {
+            JSONObject(modelText)
+        } catch (error: org.json.JSONException) {
+            throw IllegalStateException("Gemini returned an invalid recommendation.", error)
+        }
+        val selectionIndex = parsed.optString("selectionId").toIntOrNull()?.minus(1)
+            ?: throw IllegalStateException("Gemini selected a server outside the available list.")
+        val selected = available.getOrNull(selectionIndex)
+            ?: throw IllegalStateException("Gemini selected a server outside the available list.")
+        val reason = parsed.optString("reason").take(500)
+        return Recommendation(
+            selected.id,
+            reason.ifBlank { "Recommended from the available server metadata." },
+        )
+    }
 }

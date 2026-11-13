@@ -235,6 +235,10 @@ internal fun NetconDashboard(
             recommendationMessage = "Enter your Gemini API key. It stays in this screen session."
             return
         }
+        if (purpose.isBlank()) {
+            recommendationMessage = "Describe what you want to use the VPN for."
+            return
+        }
         if (Regex("(?i)^(vmess|vless|trojan|ss)://").containsMatchIn(purpose.trim())) {
             recommendationMessage = "Paste configuration links into the local import field; credentials are never sent to Gemini."
             return
