@@ -1,0 +1,3686 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Netcon</title>
+    <meta
+      name="description"
+      content="An advanced Android VPN client featuring Xray core integration, real-time traffic telemetry, a public server directory, and local server matching."
+    />
+    <meta property="og:title" content="Netcon" />
+    <meta
+      property="og:description"
+      content="An advanced Android VPN client featuring Xray core integration, real-time traffic telemetry, a public server directory, and local server matching."
+    />
+    <link rel="icon" type="image/png" href="/assets/netcon_logo.png" />
+    <style>
+      @font-face {
+        font-family: "Space Grotesk";
+        src: url("/fonts/space_grotesk.ttf") format("truetype");
+        font-weight: 100 900;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url("/fonts/jetbrains_mono.ttf") format("truetype");
+        font-weight: 100 800;
+        font-display: swap;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+        background: linear-gradient(180deg, #d5dce2 0%, #bdc6cf 52%, #a7b1bc 100%);
+        color: #1f2730;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .mono {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .brushed-ribs {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.22;
+        background-image: repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.85) 0px,
+          rgba(255, 255, 255, 0.85) 1px,
+          transparent 1px,
+          transparent 5px,
+          rgba(107, 117, 128, 0.85) 5px,
+          rgba(107, 117, 128, 0.85) 6px,
+          transparent 6px,
+          transparent 10px
+        );
+      }
+
+      .steel-overlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.06;
+        background-image: url("/assets/brushed_steel.jpg");
+        background-size: cover;
+        background-position: center;
+      }
+
+      .app-shell {
+        position: relative;
+        z-index: 1;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 12px 12px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .logo-card {
+        width: 100%;
+        border-radius: 14px;
+        padding: 6px;
+        border: 1.5px solid #f3f6f9;
+        box-shadow: 0 3px 10px rgba(15, 23, 35, 0.14);
+        background: linear-gradient(180deg, #f1f5f8 0%, #d6dee6 55%, #b7c2ce 100%);
+      }
+
+      .logo-card-inner {
+        position: relative;
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid #2e3e54;
+        background:
+          radial-gradient(circle at 24% 50%, rgba(217, 130, 43, 0.22) 0%, transparent 62%),
+          radial-gradient(circle at 82% 35%, rgba(56, 189, 248, 0.14) 0%, transparent 56%),
+          linear-gradient(135deg, #0a1018 0%, #131e2e 52%, #0b121c 100%);
+        padding: 15px 28px 13px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        overflow: hidden;
+      }
+
+      .logo-card-brand {
+        height: 42px;
+        max-width: 78%;
+        width: auto;
+        object-fit: contain;
+        display: block;
+        filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
+      }
+
+      .logo-card-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: #e2e8f0;
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.9px;
+      }
+
+      .logo-card-sub {
+        color: #94a3b8;
+        font-size: 8px;
+        letter-spacing: 0.5px;
+      }
+
+      .corner-screw {
+        position: absolute;
+        width: 13px;
+        height: 13px;
+        border-radius: 999px;
+        background: radial-gradient(circle at 35% 35%, #eff3f6 0%, #8c96a0 100%);
+        border: 1px solid #5d6670;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6);
+      }
+
+      .corner-screw::after {
+        content: "";
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        top: 50%;
+        height: 1.4px;
+        background: #3e464f;
+        transform: translateY(-50%) rotate(var(--screw-rot, 24deg));
+      }
+
+      .nav-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .nav-tab {
+        min-height: 48px;
+        border-radius: 10px;
+        border: 1px solid #9ea7b2;
+        background: linear-gradient(180deg, #d8dfe6 0%, #bfc8d1 100%);
+        color: #47525e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        transition: filter 140ms ease, transform 100ms ease;
+        user-select: none;
+      }
+
+      .nav-tab:hover {
+        filter: brightness(1.03);
+      }
+
+      .nav-tab:active {
+        transform: scale(0.99);
+      }
+
+      .nav-tab.active {
+        border: 1.5px solid #f3f6f9;
+        background: linear-gradient(180deg, #f3f6f9 0%, #d5dce3 100%);
+        color: #1f2730;
+        box-shadow: 0 2px 5px rgba(15, 23, 35, 0.08);
+      }
+
+      .nav-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #87929e;
+      }
+
+      .nav-tab.active .nav-dot {
+        background: #10b981;
+      }
+
+      .silver-card {
+        position: relative;
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at 50% 0%, rgba(34, 255, 136, 0.07) 0%, transparent 62%),
+          linear-gradient(180deg, #141c27 0%, #0b1119 58%, #070b10 100%);
+        border: 1.5px solid #334459;
+        box-shadow:
+          inset 0 1px 0 rgba(148, 163, 184, 0.16),
+          0 8px 20px rgba(2, 6, 12, 0.45);
+        padding: 14px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .telemetry-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .telemetry-title {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        color: #22ff88;
+        text-shadow: 0 0 8px rgba(34, 255, 136, 0.28);
+      }
+
+      .telemetry-subtitle {
+        font-size: 7.5px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        transition: all 180ms ease;
+      }
+
+      .status-pill-dot {
+        position: relative;
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        flex-shrink: 0;
+        transition: background-color 180ms ease, box-shadow 180ms ease;
+      }
+
+      .status-pill-dot::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
+        border: 1.4px solid transparent;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      @keyframes statusPillPulseOnline {
+        0% {
+          transform: scale(0.92);
+          box-shadow: 0 0 0 0 rgba(34, 255, 136, 0.78), 0 0 8px rgba(34, 255, 136, 0.85);
+        }
+        55% {
+          transform: scale(1.18);
+          box-shadow: 0 0 0 6px rgba(34, 255, 136, 0), 0 0 12px rgba(34, 255, 136, 0.95);
+        }
+        100% {
+          transform: scale(0.92);
+          box-shadow: 0 0 0 0 rgba(34, 255, 136, 0), 0 0 8px rgba(34, 255, 136, 0.65);
+        }
+      }
+
+      @keyframes statusPillPulseConnecting {
+        0% {
+          transform: scale(0.88);
+          box-shadow: 0 0 0 0 rgba(245, 166, 35, 0.82), 0 0 8px rgba(245, 166, 35, 0.85);
+        }
+        50% {
+          transform: scale(1.24);
+          box-shadow: 0 0 0 6px rgba(245, 166, 35, 0), 0 0 13px rgba(245, 166, 35, 1);
+        }
+        100% {
+          transform: scale(0.88);
+          box-shadow: 0 0 0 0 rgba(245, 166, 35, 0), 0 0 8px rgba(245, 166, 35, 0.65);
+        }
+      }
+
+      @keyframes statusPillHaloRing {
+        0% {
+          transform: scale(0.65);
+          opacity: 0.85;
+        }
+        100% {
+          transform: scale(1.65);
+          opacity: 0;
+        }
+      }
+
+      .status-pill-dot.pulsing-online {
+        animation: statusPillPulseOnline 1.25s infinite ease-in-out;
+      }
+
+      .status-pill-dot.pulsing-online::after {
+        border-color: #22ff88;
+        animation: statusPillHaloRing 1.25s infinite cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .status-pill-dot.pulsing-connecting {
+        animation: statusPillPulseConnecting 0.78s infinite ease-in-out;
+      }
+
+      .status-pill-dot.pulsing-connecting::after {
+        border-color: #f5a623;
+        animation: statusPillHaloRing 0.78s infinite cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      @keyframes hudRingRotate {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes hudRadarPulse {
+        0% {
+          r: 22;
+          opacity: 0.55;
+        }
+        100% {
+          r: 43;
+          opacity: 0;
+        }
+      }
+
+      .gauges-row {
+        display: grid;
+        grid-template-columns: 1fr 1.12fr 1fr;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .gauge-col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+
+      .gauge-box {
+        position: relative;
+        width: 100%;
+        max-width: 150px;
+        aspect-ratio: 1 / 1;
+      }
+
+      .gauge-box.clickable {
+        cursor: pointer;
+      }
+
+      .gauge-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13% 0 12%;
+        pointer-events: none;
+      }
+
+      .gauge-top-label {
+        font-size: 7.5px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #22ff88;
+      }
+
+      .gauge-val-box {
+        border-radius: 4px;
+        background: rgba(3, 8, 12, 0.88);
+        border: 1px solid rgba(34, 255, 136, 0.42);
+        padding: 2px 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .gauge-val {
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.05;
+      }
+
+      .gauge-sub-label {
+        font-size: 6.5px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        margin-top: 2px;
+      }
+
+      .gauge-bottom-label {
+        margin-top: 5px;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        color: #e2e8f0;
+      }
+
+      .chassis-btn {
+        position: relative;
+        width: 100%;
+        max-width: 164px;
+        aspect-ratio: 1 / 1;
+        border-radius: 999px;
+        padding: 6px;
+        border: 1.5px solid rgba(56, 189, 248, 0.55);
+        background: radial-gradient(circle at 40% 35%, #2e3d52 0%, #182230 58%, #0a1017 100%);
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(2, 6, 12, 0.45);
+        transition: transform 120ms ease, border-color 180ms ease;
+      }
+
+      .chassis-btn:active {
+        transform: scale(0.97);
+      }
+
+      .chassis-inner {
+        width: 100%;
+        height: 100%;
+        border-radius: 999px;
+        border: 1.8px solid rgba(56, 189, 248, 0.45);
+        background: radial-gradient(circle, #08131c 0%, #03070b 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .chassis-inner.connected {
+        border-color: #22ff88;
+        background: radial-gradient(circle, #07291e 0%, #03070b 100%);
+        box-shadow: inset 0 0 16px rgba(34, 255, 136, 0.22);
+      }
+
+      .chassis-inner.connecting {
+        border-color: #f5a623;
+        background: radial-gradient(circle, #261c0a 0%, #03070b 100%);
+        box-shadow: inset 0 0 14px rgba(245, 166, 35, 0.2);
+      }
+
+      .chassis-inner.error {
+        border-color: #ef4444;
+        background: radial-gradient(circle, #2b0d12 0%, #03070b 100%);
+      }
+
+      .chassis-hud-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      .chassis-lock-ring {
+        transform-origin: 50px 50px;
+      }
+
+      .chassis-inner.connected .chassis-lock-ring,
+      .chassis-inner.connecting .chassis-lock-ring {
+        animation: hudRingRotate 4.8s linear infinite;
+      }
+
+      .chassis-radar-wave {
+        display: none;
+      }
+
+      .chassis-inner.connected .chassis-radar-wave,
+      .chassis-inner.connecting .chassis-radar-wave {
+        display: block;
+        animation: hudRadarPulse 1.25s linear infinite;
+      }
+
+      .oled-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .oled-card {
+        border-radius: 9px;
+        background: #04090e;
+        border: 1.2px solid rgba(34, 255, 136, 0.38);
+        padding: 9px 11px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .oled-label {
+        font-size: 8.5px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #94a3b8;
+      }
+
+      .oled-sublabel {
+        font-size: 8px;
+        font-weight: 700;
+        margin-top: 2px;
+      }
+
+      .oled-value {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .error-banner {
+        border-radius: 8px;
+        background: #331418;
+        border: 1px solid #ef4444;
+        padding: 8px 10px;
+        color: #fca5a5;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+      }
+
+      .server-card {
+        border-radius: 14px;
+        background: linear-gradient(180deg, #131d2d 0%, #0b111c 100%);
+        border: 1px solid #29384d;
+        padding: 13px 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+      }
+
+      .flag-badge {
+        width: 44px;
+        height: 34px;
+        border-radius: 7px;
+        background: #172233;
+        border: 1px solid #394b66;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        overflow: hidden;
+        padding: 3px;
+      }
+
+      .server-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .server-name-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .server-name {
+        color: #f8fafc;
+        font-size: 15px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .server-meta {
+        color: #38bdf8;
+        font-size: 9.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .switch-btn {
+        min-height: 42px;
+        border-radius: 9px;
+        background: linear-gradient(180deg, #1f2b3d 0%, #131b28 100%);
+        border: 1px solid #3e4e68;
+        padding: 9px 13px;
+        color: #e2e8f0;
+        font-size: 10px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .map-card {
+        border-radius: 14px;
+        background: linear-gradient(180deg, #dce2e8 0%, #b3bcc5 55%, #939ca6 100%);
+        border: 1.5px solid #e9eef2;
+        padding: 11px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .map-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .map-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .map-link-btn {
+        background: transparent;
+        border: none;
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .map-viewport {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1.55 / 1;
+        border-radius: 10px;
+        background: radial-gradient(circle, #0e1522 0%, #0a0f17 100%);
+        border: 1.5px solid #444e5a;
+        overflow: hidden;
+        touch-action: none;
+        user-select: none;
+        cursor: grab;
+      }
+
+      .map-viewport:active {
+        cursor: grabbing;
+      }
+
+      .map-viewport canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .map-regions-chip {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        border-radius: 6px;
+        background: rgba(7, 9, 13, 0.82);
+        border: 1px solid rgba(49, 59, 75, 0.8);
+        padding: 4px 8px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 9px;
+        font-weight: 700;
+        color: #f1f5f9;
+        pointer-events: none;
+      }
+
+      .map-hud-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 7px;
+        background: rgba(7, 9, 13, 0.85);
+        border: 1px solid rgba(71, 84, 105, 0.7);
+        color: #f0c99e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .map-hud-stack {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .map-hub-popup {
+        position: absolute;
+        bottom: 8px;
+        left: 8px;
+        border-radius: 8px;
+        background: rgba(7, 9, 13, 0.92);
+        border: 1px solid #d97d48;
+        padding: 7px 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .map-readout-bar {
+        border-radius: 8px;
+        background: #0a1017;
+        border: 1px solid #47525e;
+        padding: 8px 11px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .sentinel-outer {
+        border-radius: 14px;
+        background: linear-gradient(180deg, #8c9aa8 0%, #515e6b 100%);
+        border: 1.5px solid #b8c4d0;
+        padding: 4px;
+      }
+
+      .sentinel-inner {
+        position: relative;
+        border-radius: 11px;
+        background: linear-gradient(180deg, #0e212b 0%, #081219 100%);
+        border: 1px solid #284357;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .sentinel-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 14px 0;
+        gap: 8px;
+      }
+
+      .sentinel-chip {
+        border-radius: 5px;
+        background: #132634;
+        border: 1px solid #3a5b73;
+        padding: 5px 9px;
+        color: #e2e8f0;
+        font-size: 8.5px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .sentinel-log-box {
+        border-radius: 8px;
+        background: #04090e;
+        border: 1px solid #1d3342;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-height: 76px;
+      }
+
+      .sentinel-line {
+        font-size: 9.5px;
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
+      .drawer-toggle {
+        border-radius: 7px;
+        background: #0d1d28;
+        border: 1px solid #284357;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        color: #e2e8f0;
+        font-size: 9.5px;
+        font-weight: 700;
+      }
+
+      .recessed-input {
+        width: 100%;
+        border-radius: 8px;
+        background: #060a10;
+        border: 1px solid #2d3c50;
+        padding: 11px 12px;
+        color: #f1f5f9;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 13px;
+        outline: none;
+      }
+
+      .recessed-input:focus {
+        border-color: #d9822b;
+      }
+
+      .copper-btn {
+        min-height: 44px;
+        border-radius: 8px;
+        background: linear-gradient(180deg, #f6d08a 0%, #d9822b 52%, #9c5114 100%);
+        border: 1px solid rgba(251, 224, 169, 0.5);
+        padding: 10px 12px;
+        color: #1d0e05;
+        font-size: 10px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+
+      .copper-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .secondary-btn {
+        min-height: 44px;
+        border-radius: 8px;
+        background: #131d2b;
+        border: 1px solid #3e4e68;
+        padding: 10px 12px;
+        color: #f1f5f9;
+        font-size: 10px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+
+      .keycap-row {
+        display: grid;
+        gap: 6px;
+      }
+
+      .keycap {
+        min-height: 40px;
+        border-radius: 7px;
+        background: #0d1722;
+        border: 1px solid #2c3e52;
+        padding: 9px 8px;
+        color: #94a3b8;
+        font-size: 10px;
+        font-weight: 600;
+        text-align: center;
+        cursor: pointer;
+      }
+
+      .keycap.selected {
+        background: rgba(217, 130, 43, 0.24);
+        border-color: #f5a623;
+        color: #f0c99e;
+      }
+
+      .metal-panel {
+        border-radius: 12px;
+        background: linear-gradient(180deg, #131d2d 0%, #0b111c 100%);
+        border: 1px solid #2d3b50;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .section-title {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        color: #1f2730;
+        margin: 0;
+      }
+
+      .divider {
+        height: 1px;
+        background: #313b4b;
+        width: 100%;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: rgba(4, 9, 14, 0.76);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+      }
+
+      .modal-panel {
+        width: 100%;
+        max-width: 520px;
+        max-height: 88vh;
+        overflow-y: auto;
+        border-radius: 12px;
+        background: #1a212b;
+        border: 1px solid #475469;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        color: #f1f5f9;
+      }
+
+      .fullscreen-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: #07090d;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        color: #f1f5f9;
+      }
+
+      .footer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 2px 4px;
+        font-size: 8.5px;
+        font-weight: 700;
+        color: #47525e;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="brushed-ribs"></div>
+    <div class="steel-overlay"></div>
+
+    <main class="app-shell">
+      <div class="logo-card">
+        <div class="logo-card-inner">
+          <span class="corner-screw" style="top: 8px; left: 8px; --screw-rot: 22deg;"></span>
+          <span class="corner-screw" style="top: 8px; right: 8px; --screw-rot: -28deg;"></span>
+          <span class="corner-screw" style="bottom: 8px; left: 8px; --screw-rot: -18deg;"></span>
+          <span class="corner-screw" style="bottom: 8px; right: 8px; --screw-rot: 34deg;"></span>
+
+          <img class="logo-card-brand" src="/assets/netcon_logo.png" alt="Netcon logo" />
+          <div class="logo-card-kicker mono">
+            <span id="logo-card-dot" style="width: 6px; height: 6px; border-radius: 999px; background: #d9822b;"></span>
+            <span>PRECISION MULTI-PROTOCOL TUNNEL</span>
+          </div>
+          <div id="logo-card-meta" class="logo-card-sub mono">VLESS-REALITY  ·  XRAY CORE  ·  ZERO-LOG</div>
+        </div>
+      </div>
+
+      <!-- 3-Day Free Trial & License Status Bar -->
+      <div id="trial-license-bar" class="mono" style="border-radius: 10px; background: #0a111a; border: 1px solid rgba(245, 166, 35, 0.55); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer;">
+        <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+          <span id="trial-bar-dot" style="width: 7px; height: 7px; border-radius: 999px; background: #f5a623; flex-shrink: 0;"></span>
+          <span id="trial-bar-text" style="font-size: 9.5px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">FREE TRIAL · 3D 00H 00M LEFT</span>
+        </div>
+        <span id="trial-bar-badge" style="border-radius: 6px; background: rgba(217, 130, 43, 0.22); border: 1px solid rgba(245, 166, 35, 0.7); padding: 4px 8px; font-size: 8.5px; font-weight: 700; color: #f5a623; flex-shrink: 0;">ACTIVATE KEY</span>
+      </div>
+
+      <!-- Top Navigation matching DesignTwoNavigation -->
+      <nav class="nav-row" aria-label="Dashboard tabs">
+        <button type="button" class="nav-tab mono active" data-tab="CONNECT">
+          <span class="nav-dot"></span>
+          <span>CONNECT</span>
+        </button>
+        <button type="button" class="nav-tab mono" data-tab="CONFIG">
+          <span class="nav-dot"></span>
+          <span>CONFIG</span>
+        </button>
+        <button type="button" class="nav-tab mono" data-tab="INFO">
+          <span class="nav-dot"></span>
+          <span>INFO</span>
+        </button>
+      </nav>
+
+      <!-- TAB 1: CONNECT -->
+      <div id="tab-connect" style="display: flex; flex-direction: column; gap: 12px;">
+        <!-- 1. F-16 / F-22 Raptor MFD & HUD Telemetry Cluster -->
+        <section class="silver-card">
+          <div class="telemetry-header">
+            <span class="telemetry-title mono">TELEMETRY</span>
+            <div id="status-pill" class="status-pill mono" style="background: rgba(148, 163, 184, 0.14); color: #94a3b8;">
+              <span id="status-pill-dot" class="status-pill-dot" style="background: #94a3b8;"></span>
+              <span id="status-pill-text">OFFLINE</span>
+            </div>
+          </div>
+
+          <div class="gauges-row">
+            <!-- Left MFD: Latency Radar Gauge -->
+            <div class="gauge-col">
+              <div id="ping-gauge" class="gauge-box clickable" title="Tap to refresh handshake latency">
+                <svg id="ping-svg" viewBox="0 0 100 100" style="width: 100%; height: 100%;"></svg>
+                <div class="gauge-overlay">
+                  <span id="ping-top-label" class="gauge-top-label mono" style="color: #22ff88;">ms</span>
+                  <div id="ping-val-box" class="gauge-val-box" style="border-color: rgba(34, 255, 136, 0.45);">
+                    <span id="ping-val" class="gauge-val mono" style="color: #22ff88;">—</span>
+                  </div>
+                </div>
+              </div>
+              <span class="gauge-bottom-label mono">PING</span>
+            </div>
+
+            <!-- Center HUD: F-16 Flight Path & Pitch Ladder Connection Display -->
+            <div class="gauge-col">
+              <button id="vpn-power-btn" type="button" class="chassis-btn" aria-label="Connect VPN">
+                <div id="chassis-inner" class="chassis-inner">
+                  <svg class="chassis-hud-svg" viewBox="0 0 100 100">
+                    <circle id="chassis-radar-wave" class="chassis-radar-wave" cx="50" cy="50" r="24" fill="none" stroke="#22ff88" stroke-width="1.4" />
+                    <!-- Artificial Horizon & Pitch Ladder (+10°, 0°, -10°) -->
+                    <g id="chassis-pitch-ladder" stroke="#38bdf8" stroke-opacity="0.32" stroke-width="1">
+                      <line x1="14" y1="50" x2="32" y2="50" />
+                      <line x1="68" y1="50" x2="86" y2="50" />
+                      <line x1="27" y1="33" x2="39" y2="33" />
+                      <line x1="27" y1="33" x2="27" y2="36.5" />
+                      <line x1="61" y1="33" x2="73" y2="33" />
+                      <line x1="73" y1="33" x2="73" y2="36.5" />
+                      <line x1="27" y1="67" x2="39" y2="67" />
+                      <line x1="27" y1="67" x2="27" y2="63.5" />
+                      <line x1="61" y1="67" x2="73" y2="67" />
+                      <line x1="73" y1="67" x2="73" y2="63.5" />
+                    </g>
+                    <!-- Segmented Rotating Tactical Lock Ring -->
+                    <g id="chassis-lock-ring" class="chassis-lock-ring" fill="none" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round">
+                      <path d="M 50 8 A 42 42 0 0 1 86.3 29" />
+                      <path d="M 92 50 A 42 42 0 0 1 71 86.3" />
+                      <path d="M 50 92 A 42 42 0 0 1 13.7 71" />
+                      <path d="M 8 50 A 42 42 0 0 1 29 13.7" />
+                    </g>
+                  </svg>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="#38bdf8" id="chassis-bolt" style="position: relative; z-index: 1;">
+                    <path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66l.1-.16L12.5 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15L11 21z" />
+                  </svg>
+                  <span id="chassis-word" class="mono" style="position: relative; z-index: 1; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; color: #38bdf8;">OFFLINE</span>
+                  <span id="chassis-duration" class="mono hidden" style="position: relative; z-index: 1; font-size: 7.5px; font-weight: 700; color: #e2e8f0;">00:00:00</span>
+                </div>
+              </button>
+              <span class="gauge-bottom-label mono">STATUS</span>
+            </div>
+
+            <!-- Right MFD: TX Speed Uplink / Data-Link Gauge -->
+            <div class="gauge-col">
+              <div class="gauge-box">
+                <svg id="bw-svg" viewBox="0 0 100 100" style="width: 100%; height: 100%;"></svg>
+                <div class="gauge-overlay">
+                  <span class="gauge-top-label mono" style="color: #38bdf8;">Mbps</span>
+                  <div class="gauge-val-box" style="border-color: rgba(56, 189, 248, 0.45);">
+                    <span id="bw-val" class="gauge-val mono" style="color: #38bdf8;">0.0</span>
+                  </div>
+                </div>
+              </div>
+              <span class="gauge-bottom-label mono">TX</span>
+            </div>
+          </div>
+
+          <div class="oled-row">
+            <div class="oled-card" style="border-color: rgba(34, 255, 136, 0.42);">
+              <span class="oled-label mono">RX</span>
+              <span id="rx-val" class="oled-value mono" style="color: #22ff88;">0 B</span>
+            </div>
+            <div class="oled-card" style="border-color: rgba(56, 189, 248, 0.42);">
+              <span class="oled-label mono">TX</span>
+              <span id="tx-val" class="oled-value mono" style="color: #38bdf8;">0 B</span>
+            </div>
+          </div>
+
+          <div id="error-banner" class="error-banner hidden">
+            <span id="error-banner-text"></span>
+            <span class="mono" style="font-weight: 700;">✕</span>
+          </div>
+        </section>
+
+        <!-- 2. Server Selection Card -->
+        <div id="server-card" class="server-card">
+          <div id="flag-badge" class="flag-badge mono"></div>
+          <div class="server-info">
+            <div class="server-name-row">
+              <span id="server-name-text" class="server-name">SG-Cloudflare-Reality-01</span>
+              <span id="server-dot" style="width: 7px; height: 7px; border-radius: 999px; background: #d9822b; flex-shrink: 0;"></span>
+            </div>
+            <div id="server-meta-text" class="server-meta mono">• VLESS-XTLS | Singapore | PING: —</div>
+          </div>
+          <button id="switch-server-btn" type="button" class="switch-btn mono">
+            <span>SWITCH</span>
+            <span>▾</span>
+          </button>
+        </div>
+
+        <!-- 3. Proton VPN-Style World Map Panel -->
+        <section class="map-card">
+          <div class="map-header">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span id="map-header-dot" style="width: 7px; height: 7px; border-radius: 999px; background: #64748b;"></span>
+              <span class="mono" style="font-size: 10px; font-weight: 700; letter-spacing: 0.8px; color: #232b35;">GLOBAL ROUTING MAP</span>
+            </div>
+            <div class="map-actions">
+              <button id="map-full-btn" type="button" class="map-link-btn mono" style="color: #0e3a53;">FULL MAP</button>
+            </div>
+          </div>
+
+          <div id="map-viewport" class="map-viewport" title="Drag to pan · Scroll wheel or double-click to zoom up to 18×">
+            <canvas id="world-map-canvas"></canvas>
+
+            <div class="map-regions-chip mono">
+              <span id="map-chip-dot" style="width: 6px; height: 6px; border-radius: 999px; background: #d97d48;"></span>
+              <span id="map-chip-text">17 REGIONS · 2.0×</span>
+            </div>
+
+            <div style="position: absolute; top: 8px; right: 8px; display: flex; gap: 5px;">
+              <button id="map-expand-hud" type="button" class="map-hud-btn" title="Open fullscreen world map">⤢</button>
+            </div>
+
+            <div class="map-hud-stack">
+              <button id="map-world-btn" type="button" class="map-hud-btn" title="Fit full world map (1×)">🌐</button>
+              <button id="map-recenter-btn" type="button" class="map-hud-btn" title="Center on active server">⌖</button>
+              <button id="map-zoom-in-btn" type="button" class="map-hud-btn" title="Zoom in (up to 18×)">+</button>
+              <button id="map-zoom-out-btn" type="button" class="map-hud-btn" title="Zoom out">−</button>
+            </div>
+
+            <div id="map-hub-popup" class="map-hub-popup hidden">
+              <div>
+                <div id="hub-popup-title" style="font-size: 11px; font-weight: 700; color: #f1f5f9;"></div>
+                <div id="hub-popup-city" class="mono" style="font-size: 9px; color: #94a3b8;"></div>
+              </div>
+              <button id="hub-popup-btn" type="button" class="copper-btn mono" style="min-height: 28px; padding: 5px 9px; font-size: 9px;">SERVERS</button>
+            </div>
+          </div>
+
+          <!-- Quick Zoom Level Presets Row -->
+          <div id="inline-zoom-presets" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+            <button type="button" class="keycap mono" data-zoom="1.0" style="min-height: 28px; padding: 4px 6px; font-size: 8.5px;">1× WORLD</button>
+            <button type="button" class="keycap mono" data-zoom="3.0" style="min-height: 28px; padding: 4px 6px; font-size: 8.5px;">3× REGION</button>
+            <button type="button" class="keycap mono" data-zoom="7.0" style="min-height: 28px; padding: 4px 6px; font-size: 8.5px;">7× METRO</button>
+            <button type="button" class="keycap mono" data-zoom="14.0" style="min-height: 28px; padding: 4px 6px; font-size: 8.5px;">14× DETAIL</button>
+          </div>
+
+          <!-- Active Server Location Bar -->
+          <div class="map-readout-bar">
+            <div style="min-width: 0; flex: 1;">
+              <div id="map-loc-name" style="font-size: 11px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Singapore</div>
+              <div id="map-loc-coords" class="mono" style="font-size: 9px; color: #38bdf8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">1.3521°, 103.8198° · Tap a country hub or zoom up to 18×</div>
+            </div>
+          </div>
+
+          <!-- User Location Bar (Automatic GPS / Network Location) -->
+          <div class="map-readout-bar">
+            <div style="min-width: 0; flex: 1;">
+              <div style="font-size: 11px; font-weight: 600; color: #f1f5f9;">YOUR LOCATION (AUTO GPS / NETWORK)</div>
+              <div id="user-loc-coords" class="mono" style="font-size: 9px; color: #38bdf8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Detecting exact or approximate device location…</div>
+            </div>
+            <button id="user-loc-pin-btn" type="button" class="mono" style="border-radius: 6px; background: #222a36; border: 1px solid #38bdf8; padding: 8px 10px; color: #38bdf8; font-size: 9px; font-weight: 700; cursor: pointer;">AUTO LOCATE</button>
+          </div>
+        </section>
+
+        <!-- 4. AI Live Sentinel Stream Card -->
+        <section class="sentinel-outer">
+          <div class="sentinel-inner">
+            <div class="sentinel-top">
+              <div>
+                <div class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.6px; color: #7dd3fc;">AI LIVE SENTINEL STREAM</div>
+                <div id="sentinel-subtitle" class="mono" style="font-size: 8.5px; color: #94a3b8;">XRAY CORE + LOCAL SERVER MATCH</div>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button id="sentinel-pause-btn" type="button" class="sentinel-chip mono">PAUSE</button>
+                <button id="sentinel-clear-btn" type="button" class="sentinel-chip mono">CLEAR</button>
+              </div>
+            </div>
+
+            <div id="sentinel-log-box" class="sentinel-log-box mono"></div>
+
+            <button id="tools-drawer-toggle" type="button" class="drawer-toggle mono">
+              <span>✦ IMPORT CONFIG &amp; LOCAL SERVER MATCH</span>
+              <span id="tools-drawer-chevron">▾</span>
+            </button>
+
+            <div id="tools-drawer-content" class="hidden" style="display: flex; flex-direction: column; gap: 9px;">
+              <input
+                id="quick-import-input"
+                type="text"
+                class="recessed-input"
+                placeholder="Paste vless://, vmess://, trojan://, ss:// or Xray JSON"
+              />
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <button id="quick-import-btn" type="button" class="copper-btn mono">IMPORT LINK</button>
+                <button id="open-public-servers-btn" type="button" class="secondary-btn mono">PUBLIC SERVERS</button>
+              </div>
+
+              <div class="divider" style="background: #1f3647;"></div>
+
+              <div class="mono" style="font-size: 9px; font-weight: 700; color: #9fb2c4;">ACTIVITY PROFILE · LOCAL DISTANCE MATCH</div>
+              <div id="activity-row" class="keycap-row" style="grid-template-columns: repeat(4, 1fr);"></div>
+              <div style="font-size: 10px; color: #cbd5e1;">
+                Uses approximate region distance only; server latency and streaming capacity are not provided.
+              </div>
+              <button id="local-match-btn" type="button" class="copper-btn mono" style="width: 100%;">
+                LOCAL MATCH · FIND PUBLIC SERVER
+              </button>
+              <div id="recommendation-msg" class="hidden" style="font-size: 10.5px; color: #e2e8f0; line-height: 1.4;"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 2: CONFIG -->
+      <div id="tab-config" class="hidden" style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 class="section-title mono">NETWORK &amp; ROUTING</h2>
+        <div class="metal-panel">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #f1f5f9;">Android VPN Lockdown</div>
+              <div style="font-size: 11px; color: #94a3b8;">Always-on VPN &amp; block non-VPN traffic</div>
+            </div>
+            <button id="vpn-settings-btn-1" type="button" class="secondary-btn mono">OPEN</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #f1f5f9;">DNS Resolver</div>
+              <div id="dns-detail-label" style="font-size: 11px; color: #94a3b8;">Active upstream DNS: 1.1.1.1</div>
+            </div>
+          </div>
+          <div id="dns-keycaps" class="keycap-row" style="grid-template-columns: repeat(4, 1fr);"></div>
+
+          <div class="divider"></div>
+
+          <div class="mono" style="font-size: 10px; font-weight: 700; color: #94a3b8;">ALLOWED PROTOCOLS</div>
+          <div id="protocol-toggles" class="keycap-row" style="grid-template-columns: repeat(4, 1fr);"></div>
+
+          <div class="divider"></div>
+
+          <div class="mono" style="font-size: 10px; font-weight: 700; color: #94a3b8;">ROUTING MODE</div>
+          <div id="route-keycaps" class="keycap-row" style="grid-template-columns: repeat(3, 1fr);"></div>
+        </div>
+
+        <button id="export-json-btn" type="button" class="copper-btn mono" style="width: 100%;">
+          EXPORT XRAY / V2RAY JSON
+        </button>
+      </div>
+
+      <!-- TAB 3: INFO -->
+      <div id="tab-info" class="hidden" style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 class="section-title mono">LICENSE &amp; 1-KEY-PER-ACCOUNT ENFORCEMENT</h2>
+        <div class="metal-panel">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">License State</span>
+            <span id="info-license-state" class="mono" style="font-size: 11px; font-weight: 700; color: #f5a623;">TRIAL_ACTIVE</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Trial Countdown</span>
+            <span id="info-trial-countdown" class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">3D 00H 00M</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Server Access</span>
+            <span id="info-server-access" class="mono" style="font-size: 11px; font-weight: 700; color: #22ff88;">ALLOWED</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Account Binding</span>
+            <span id="info-bound-account" class="mono" style="font-size: 11px; font-weight: 700; color: #38bdf8;">1 Key = 1 Account</span>
+          </div>
+          <div class="mono" style="font-size: 9.5px; color: #94a3b8; line-height: 1.4;">
+            CLI: <span style="color: #f0c99e;">bash scripts/manage-keystore.sh generate-license-key &lt;email&gt;</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <button id="info-open-license-btn" type="button" class="copper-btn mono">ENTER LICENSE KEY</button>
+            <button id="info-simulate-expired-btn" type="button" class="secondary-btn mono">SIMULATE EXPIRED</button>
+          </div>
+          <button id="info-reset-trial-btn" type="button" class="secondary-btn mono" style="width: 100%;">RESET 3-DAY (72H) FREE TRIAL</button>
+        </div>
+
+        <h2 class="section-title mono">GITHUB RELEASE &amp; KEYSTORE SIGNING</h2>
+        <div class="metal-panel">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Workflow</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">.github/workflows/release-apk.yml</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Keystore Manager</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">scripts/manage-keystore.sh</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Signing Alias</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">upload (my-upload-key.jks)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Env Secrets</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #38bdf8;">KEYSTORE_BASE64 · STORE_PASSWORD · KEY_PASSWORD</span>
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; line-height: 1.45;">
+            Push any <span class="mono" style="color: #f0c99e;">v*</span> git tag (e.g. <span class="mono" style="color: #f0c99e;">v1.0.5</span>) or trigger the GitHub Actions workflow to build, sign, verify, and publish the release APK + SHA-256 checksum to GitHub Releases.
+          </div>
+        </div>
+
+        <h2 class="section-title mono">DEVICE &amp; CORE TELEMETRY</h2>
+        <div class="metal-panel">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Engine</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">Copper Compass · Xray V1.8.16</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">App Version</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">1.0.5</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Tunnel Service</span>
+            <span id="info-state" class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">DISCONNECTED · Xray</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Active Protocol</span>
+            <span id="info-proto" class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">FREEDOM</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Active Node</span>
+            <span id="info-node" class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">SG-Cloudflare-Reality-01</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 12px; color: #94a3b8;">Config Storage</span>
+            <span class="mono" style="font-size: 11px; font-weight: 700; color: #f1f5f9;">Device Private Preferences</span>
+          </div>
+        </div>
+
+        <div class="metal-panel">
+          <div style="font-size: 13px; font-weight: 700; color: #f0c99e;">ZERO-LOG &amp; DATA SAFETY</div>
+          <div style="font-size: 12px; color: #f1f5f9; line-height: 1.45;">
+            Configuration links are parsed locally and saved in private app preferences. No telemetry or advertising SDK is included.
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; line-height: 1.45;">
+            VPN routing is powered by Android VpnService and the bundled Xray core. Always verify IP and DNS leak behavior on a physical device.
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer-bar mono">
+        <span>NETCON SECURITY ARCHITECTURE</span>
+        <span>XRAY CORE · ZERO-LOG</span>
+      </footer>
+    </main>
+
+    <!-- LICENSE & 1-KEY-PER-ACCOUNT DIALOG -->
+    <div id="license-modal" class="modal-backdrop hidden">
+      <div class="modal-panel" style="border-color: rgba(245, 166, 35, 0.65);">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <strong class="mono" style="font-size: 13px;">1-KEY-PER-ACCOUNT LICENSE</strong>
+          <button id="close-license-modal" type="button" class="secondary-btn mono" style="min-height: 32px; padding: 4px 10px;">✕</button>
+        </div>
+        <div id="license-modal-desc" style="font-size: 11.5px; color: #94a3b8; line-height: 1.45;">
+          3-day (72-hour) free trial. Each activation key is cryptographically bound to one account email and refuses activation on any other account.
+        </div>
+        <input id="license-account-input" type="email" class="recessed-input mono" value="arxdevmm@gmail.com" placeholder="Account email (e.g. arxdevmm@gmail.com)" />
+        <input id="license-modal-input" type="text" class="recessed-input mono" placeholder="NETCON-XXXX-XXXX-XXXX-XXXX" />
+        <div id="license-modal-feedback" class="mono hidden" style="font-size: 10px;"></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button id="license-demo-key-btn" type="button" class="secondary-btn mono">ISSUE FOR EMAIL</button>
+          <button id="license-activate-btn" type="button" class="copper-btn mono">ACTIVATE KEY</button>
+        </div>
+        <div class="divider"></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button id="license-test-freeze-btn" type="button" class="secondary-btn mono">TEST FREEZE</button>
+          <button id="license-reset-trial-btn" type="button" class="secondary-btn mono">RESET 3D TRIAL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FULL-SCREEN NON-DISMISSIBLE FROZEN TRIAL LOCK OVERLAY -->
+    <div id="frozen-lock-overlay" class="modal-backdrop hidden" style="z-index: 80; background: rgba(5, 8, 14, 0.95);">
+      <div class="modal-panel" style="max-width: 450px; background: linear-gradient(180deg, #1a0f14 0%, #0d131d 55%, #070b11 100%); border: 1.5px solid #ef4444; align-items: center; text-align: center; padding: 20px;">
+        <div style="width: 50px; height: 50px; border-radius: 999px; background: #2b0d12; border: 1.5px solid #ef4444; display: flex; align-items: center; justify-content: center; color: #f87171; font-size: 21px;">🔒</div>
+        <div class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.8px; color: #f87171;">APK FROZEN · 3-DAY TRIAL EXPIRED</div>
+        <div class="mono" style="font-size: 10px; font-weight: 700; color: #f5a623;">1 KEY = 1 ACCOUNT · ALL SERVERS REFUSED</div>
+        <div id="frozen-lock-msg" style="font-size: 11.5px; color: #fca5a5; line-height: 1.45;">
+          3-day free trial expired. Enter your registered Account Email and your 1-account Netcon License Key to unlock.
+        </div>
+        <input id="frozen-account-input" type="email" class="recessed-input mono" style="text-align: center;" value="arxdevmm@gmail.com" placeholder="Account email (e.g. arxdevmm@gmail.com)" />
+        <input id="frozen-license-input" type="text" class="recessed-input mono" style="text-align: center;" placeholder="Enter license key: NETCON-XXXX-XXXX-XXXX-XXXX" />
+        <button id="frozen-activate-btn" type="button" class="copper-btn mono" style="width: 100%;">ACTIVATE ACCOUNT-BOUND KEY</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;">
+          <button id="frozen-fill-key-btn" type="button" class="secondary-btn mono">FILL ACCOUNT KEY</button>
+          <button id="frozen-reset-trial-btn" type="button" class="secondary-btn mono">RESET 3D TRIAL</button>
+        </div>
+        <div class="mono" style="font-size: 8.5px; color: #94a3b8;">
+          Each key is HMAC-signed for one account email only
+        </div>
+      </div>
+    </div>
+
+    <!-- PUBLIC SERVER DIALOG -->
+    <div id="public-server-modal" class="modal-backdrop hidden">
+      <div class="modal-panel">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <strong style="font-size: 15px;">SERVER PROFILES &amp; DIRECTORY</strong>
+          <button id="close-server-modal" type="button" class="secondary-btn mono" style="min-height: 32px; padding: 4px 10px;">✕</button>
+        </div>
+
+        <div class="mono" style="font-size: 10px; font-weight: 700; color: #f0c99e;">STABILIZED MULTI-PROTOCOL PROFILES</div>
+        <div id="preset-profile-list" style="display: flex; flex-direction: column; gap: 7px;"></div>
+
+        <div class="divider"></div>
+
+        <div class="mono" style="font-size: 10px; font-weight: 700; color: #94a3b8;">FREE PUBLIC SERVERS · FASTNODES COMMUNITY FEED</div>
+        <select id="directory-country-select" class="recessed-input mono" style="font-size: 11px; font-weight: 700; color: #f0c99e;">
+          <option value="">TOP FEED · ALL REGIONS</option>
+        </select>
+        <input id="directory-search-input" type="text" class="recessed-input" placeholder="Search protocol, profile, or location" />
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span id="directory-status-text" style="font-size: 10.5px; color: #94a3b8;">Loading public feed…</span>
+          <button id="directory-refresh-btn" type="button" class="secondary-btn mono" style="min-height: 36px;">REFRESH</button>
+        </div>
+        <div id="directory-node-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto;"></div>
+        <div class="divider"></div>
+        <div class="mono" style="font-size: 10px; font-weight: 700; color: #94a3b8;">PASTE A SERVER LINK</div>
+        <textarea id="modal-import-textarea" rows="3" class="recessed-input" placeholder="vless://, vmess://, trojan://, ss://, socks5:// or Xray JSON"></textarea>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button id="modal-cancel-btn" type="button" class="secondary-btn mono">CANCEL</button>
+          <button id="modal-import-btn" type="button" class="copper-btn mono">IMPORT LOCALLY</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FULLSCREEN WORLD MAP DIALOG -->
+    <div id="full-map-modal" class="fullscreen-modal hidden">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <div>
+          <div id="full-map-title" style="font-size: 16px; font-weight: 700;">WORLD SERVER MAP · 18× ZOOM</div>
+          <div id="full-map-subtitle" style="font-size: 11px; color: #94a3b8;">
+            Scroll wheel or double-click up to 18× · Tap a country hub to browse servers
+          </div>
+        </div>
+        <button id="close-full-map-btn" type="button" class="secondary-btn mono" style="min-height: 36px;">✕</button>
+      </div>
+
+      <div id="full-zoom-presets" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+        <button type="button" class="keycap mono" data-full-zoom="1.05" style="min-height: 30px; padding: 5px 6px; font-size: 9px;">1× WORLD</button>
+        <button type="button" class="keycap mono" data-full-zoom="3.2" style="min-height: 30px; padding: 5px 6px; font-size: 9px;">3× REGION</button>
+        <button type="button" class="keycap mono" data-full-zoom="8.0" style="min-height: 30px; padding: 5px 6px; font-size: 9px;">8× CITY</button>
+        <button type="button" class="keycap mono" data-full-zoom="16.0" style="min-height: 30px; padding: 5px 6px; font-size: 9px;">16× DETAIL</button>
+      </div>
+
+      <div id="full-map-viewport" class="map-viewport" style="flex: 1; aspect-ratio: auto;">
+        <canvas id="full-map-canvas"></canvas>
+
+        <div class="mono" style="position: absolute; top: 10px; left: 10px; border-radius: 7px; background: rgba(7, 9, 13, 0.88); border: 1px solid #313b4b; padding: 6px 9px; pointer-events: none;">
+          <div id="full-map-zoom-label" style="font-size: 9px; font-weight: 700; color: #38bdf8;">ZOOM 2.6× · MAX 18.0×</div>
+          <div id="full-map-center-label" style="font-size: 9px; color: #f1f5f9;">CENTER: 1.3521°, 103.8198°</div>
+        </div>
+
+        <div class="map-hud-stack" style="bottom: 10px; right: 10px;">
+          <button id="full-map-world-btn" type="button" class="map-hud-btn" title="Fit world">🌐</button>
+          <button id="full-map-zoom-in-btn" type="button" class="map-hud-btn" title="Zoom in">+</button>
+          <button id="full-map-zoom-out-btn" type="button" class="map-hud-btn" title="Zoom out">−</button>
+        </div>
+      </div>
+
+      <div style="border-radius: 10px; background: #1a212b; border: 1px solid #313b4b; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <div>
+          <div id="full-map-picked-name" style="font-size: 13px; font-weight: 700;">Singapore</div>
+          <div id="full-map-picked-coords" class="mono" style="font-size: 10px; color: #38bdf8;">1.3521°, 103.8198°</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="full-map-browse-btn" type="button" class="copper-btn mono hidden">BROWSE SERVERS</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const WORLD_HUB_NODES = [
+        { code: "US", countryName: "United States", cityLabel: "Ashburn", latitude: 39.0438, longitude: -77.4874 },
+        { code: "CA", countryName: "Canada", cityLabel: "Toronto", latitude: 43.6532, longitude: -79.3832 },
+        { code: "GB", countryName: "United Kingdom", cityLabel: "London", latitude: 51.5072, longitude: -0.1276 },
+        { code: "FR", countryName: "France", cityLabel: "Paris", latitude: 48.8566, longitude: 2.3522 },
+        { code: "NL", countryName: "Netherlands", cityLabel: "Amsterdam", latitude: 52.3676, longitude: 4.9041 },
+        { code: "DE", countryName: "Germany", cityLabel: "Frankfurt", latitude: 50.1109, longitude: 8.6821 },
+        { code: "SE", countryName: "Sweden", cityLabel: "Stockholm", latitude: 59.3293, longitude: 18.0686 },
+        { code: "FI", countryName: "Finland", cityLabel: "Helsinki", latitude: 60.1699, longitude: 24.9384 },
+        { code: "TR", countryName: "Turkey", cityLabel: "Istanbul", latitude: 41.0082, longitude: 28.9784 },
+        { code: "IR", countryName: "Iran", cityLabel: "Tehran", latitude: 35.6892, longitude: 51.3890 },
+        { code: "AE", countryName: "UAE", cityLabel: "Dubai", latitude: 25.2048, longitude: 55.2708 },
+        { code: "IN", countryName: "India", cityLabel: "Mumbai", latitude: 19.0760, longitude: 72.8777 },
+        { code: "SG", countryName: "Singapore", cityLabel: "Singapore", latitude: 1.3521, longitude: 103.8198 },
+        { code: "HK", countryName: "Hong Kong", cityLabel: "Hong Kong", latitude: 22.3193, longitude: 114.1694 },
+        { code: "KR", countryName: "South Korea", cityLabel: "Seoul", latitude: 37.5665, longitude: 126.9780 },
+        { code: "JP", countryName: "Japan", cityLabel: "Tokyo", latitude: 35.6762, longitude: 139.6503 },
+        { code: "AU", countryName: "Australia", cityLabel: "Sydney", latitude: -33.8688, longitude: 151.2093 }
+      ];
+      const HUB_CODE_SET = new Set(WORLD_HUB_NODES.map(n => n.code));
+      const MIN_ZOOM = 1.0;
+      const MAX_ZOOM = 18.0;
+
+      const PRESET_PROFILES = [
+        {
+          id: "preset-sg-vless-reality",
+          name: "SG-Cloudflare-Reality-01",
+          protocol: "VLESS",
+          transportSummary: "VLESS · XTLS-Reality · TCP/443",
+          countryName: "Singapore",
+          cityLabel: "Singapore",
+          countryCode: "SG",
+          latitude: 1.3521,
+          longitude: 103.8198,
+          endpointHost: "1.1.1.1",
+          endpointPort: 443
+        },
+        {
+          id: "preset-de-vmess-ws",
+          name: "DE-Frankfurt-Edge-WS02",
+          protocol: "VMESS",
+          transportSummary: "VMess · WebSocket + TLS · CDN/443",
+          countryName: "Germany",
+          cityLabel: "Frankfurt",
+          countryCode: "DE",
+          latitude: 50.1109,
+          longitude: 8.6821,
+          endpointHost: "1.0.0.1",
+          endpointPort: 443
+        },
+        {
+          id: "preset-us-trojan-grpc",
+          name: "US-Ashburn-Trojan-gRPC",
+          protocol: "TROJAN",
+          transportSummary: "Trojan · gRPC + TLS 1.3 · 443",
+          countryName: "United States",
+          cityLabel: "Ashburn",
+          countryCode: "US",
+          latitude: 39.0438,
+          longitude: -77.4874,
+          endpointHost: "8.8.8.8",
+          endpointPort: 443
+        },
+        {
+          id: "preset-jp-ss-2022",
+          name: "JP-Tokyo-SS2022-AEAD",
+          protocol: "SHADOWSOCKS",
+          transportSummary: "Shadowsocks-2022 · Blake3-AES-256-GCM",
+          countryName: "Japan",
+          cityLabel: "Tokyo",
+          countryCode: "JP",
+          latitude: 35.6762,
+          longitude: 139.6503,
+          endpointHost: "8.8.4.4",
+          endpointPort: 443
+        },
+        {
+          id: "preset-nl-vless-xhttp",
+          name: "NL-Amsterdam-XHTTP-05",
+          protocol: "VLESS",
+          transportSummary: "VLESS · XHTTP + TLS · Multiplexed",
+          countryName: "Netherlands",
+          cityLabel: "Amsterdam",
+          countryCode: "NL",
+          latitude: 52.3676,
+          longitude: 4.9041,
+          endpointHost: "9.9.9.9",
+          endpointPort: 443
+        },
+        {
+          id: "preset-gb-socks5-direct",
+          name: "GB-London-Core-Relay",
+          protocol: "FREEDOM",
+          transportSummary: "Direct Core Tunnel · Split-DNS Protected",
+          countryName: "United Kingdom",
+          cityLabel: "London",
+          countryCode: "GB",
+          latitude: 51.5072,
+          longitude: -0.1276,
+          endpointHost: "1.1.1.1",
+          endpointPort: 443
+        }
+      ];
+
+      const ACTIVITIES = ["Gaming", "Streaming", "Video calls", "Browsing"];
+      const DNS_LIST = ["1.1.1.1", "8.8.8.8", "94.140.14.14", "9.9.9.9"];
+      const ROUTE_LIST = ["Global", "Bypass LAN", "Rule-based"];
+      const PROTO_LIST = [
+        { label: "VLESS", id: "vless" },
+        { label: "VMESS", id: "vmess" },
+        { label: "TROJAN", id: "trojan" },
+        { label: "SS", id: "shadowsocks" }
+      ];
+
+      const DEFAULT_CONFIG = JSON.stringify({
+        log: { loglevel: "none" },
+        dns: { servers: ["1.1.1.1", "8.8.8.8"] },
+        netconMeta: {
+          profileId: "preset-sg-vless-reality",
+          profileName: "SG-Cloudflare-Reality-01",
+          displayProtocol: "VLESS",
+          transportSummary: "VLESS · XTLS-Reality · TCP/443",
+          endpointHost: "1.1.1.1",
+          endpointPort: 443
+        },
+        outbounds: [
+          { tag: "proxy", protocol: "freedom", settings: { profileProtocol: "vless" } },
+          { tag: "direct", protocol: "freedom", settings: {} },
+          { tag: "block", protocol: "blackhole", settings: {} }
+        ]
+      });
+
+      const state = {
+        savedConfig: localStorage.getItem("xray_config") || DEFAULT_CONFIG,
+        serverName: localStorage.getItem("server_name") || "SG-Cloudflare-Reality-01",
+        serverLocation: localStorage.getItem("server_location") || "Singapore, Singapore",
+        serverLat: localStorage.getItem("server_latitude") !== null ? Number(localStorage.getItem("server_latitude")) : 1.3521,
+        serverLon: localStorage.getItem("server_longitude") !== null ? Number(localStorage.getItem("server_longitude")) : 103.8198,
+        userLat: localStorage.getItem("user_latitude") !== null ? Number(localStorage.getItem("user_latitude")) : null,
+        userLon: localStorage.getItem("user_longitude") !== null ? Number(localStorage.getItem("user_longitude")) : null,
+        userLocationSource: localStorage.getItem("user_location_source") || "",
+        userLocationBusy: false,
+        dns: "1.1.1.1",
+        route: "Bypass LAN",
+        enabledProtocols: new Set(["vless", "vmess", "trojan", "shadowsocks", "socks", "freedom"]),
+        activity: "Gaming",
+        vpnState: "disconnected",
+        elapsedSeconds: 0,
+        receivedBytes: 0,
+        sentBytes: 0,
+        downloadMbps: 0,
+        uploadMbps: 0,
+        pingMs: null,
+        pingBusy: false,
+        sentinelPaused: false,
+        sentinelLogs: [
+          "[CORE] Xray Core V1.8.16 · Copper Compass Engine ready",
+          "[NODE] Loaded SG-Cloudflare-Reality-01 (VLESS)"
+        ],
+        countries: [],
+        selectedHub: null,
+        mapZoom: 2.2,
+        mapCenterX: 0.788,
+        mapCenterY: 0.562,
+        fullPickedLat: 1.3521,
+        fullPickedLon: 103.8198,
+        fullPickedHub: null,
+        fullZoom: 2.6,
+        fullCenterX: 0.788,
+        fullCenterY: 0.562,
+        directoryNodes: []
+      };
+
+      // Mercator projection matching ProtonWorldMapPanel.kt
+      const MIN_LAT = -58.0;
+      const MAX_LAT = 82.0;
+      function mercatorY(latDeg) {
+        const clamped = Math.max(MIN_LAT, Math.min(MAX_LAT, latDeg));
+        const rad = (clamped * Math.PI) / 180;
+        return Math.log(Math.tan(Math.PI / 4 + rad / 2));
+      }
+      const MERC_MAX = mercatorY(MAX_LAT);
+      const MERC_MIN = mercatorY(MIN_LAT);
+      const MERC_SPAN = MERC_MAX - MERC_MIN;
+
+      function projectNormalized(lat, lon) {
+        const nx = (Math.max(-180, Math.min(180, lon)) + 180) / 360;
+        const ny = (MERC_MAX - mercatorY(lat)) / MERC_SPAN;
+        return [nx, ny];
+      }
+
+      function unprojectNormalized(nx, ny) {
+        const lon = Math.max(0, Math.min(1, nx)) * 360 - 180;
+        const mercY = MERC_MAX - Math.max(0, Math.min(1, ny)) * MERC_SPAN;
+        const lat = Math.max(-85, Math.min(85, ((2 * Math.atan(Math.exp(mercY)) - Math.PI / 2) * 180) / Math.PI));
+        return [lat, lon];
+      }
+
+      function inferCountryCode(locName, lat, lon) {
+        const upper = (locName || "").toUpperCase();
+        for (const node of WORLD_HUB_NODES) {
+          if (
+            upper.includes(node.countryName.toUpperCase()) ||
+            upper.includes(node.cityLabel.toUpperCase()) ||
+            new RegExp("\\b" + node.code + "\\b").test(upper)
+          ) {
+            return node.code;
+          }
+        }
+        if (lat !== null && lon !== null) {
+          let best = null;
+          let bestD = Infinity;
+          for (const node of WORLD_HUB_NODES) {
+            const d = Math.hypot(node.latitude - lat, node.longitude - lon);
+            if (d < bestD) {
+              bestD = d;
+              best = node;
+            }
+          }
+          if (best && bestD < 8.0) return best.code;
+        }
+        return null;
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1000) return bytes + " B";
+        if (bytes < 1000000) return (bytes / 1000).toFixed(2) + " KB";
+        if (bytes < 1000000000) return (bytes / 1000000).toFixed(2) + " MB";
+        return (bytes / 1000000000).toFixed(2) + " GB";
+      }
+
+      function getProtocol(configStr) {
+        try {
+          const obj = JSON.parse(configStr);
+          if (obj.netconMeta && obj.netconMeta.displayProtocol) {
+            return String(obj.netconMeta.displayProtocol).toUpperCase();
+          }
+          return (obj.outbounds && obj.outbounds[0] && obj.outbounds[0].protocol || "").toUpperCase();
+        } catch {
+          return "";
+        }
+      }
+
+      function getCoreProtocol(configStr) {
+        try {
+          const obj = JSON.parse(configStr);
+          return (obj.outbounds && obj.outbounds[0] && obj.outbounds[0].protocol || "").toLowerCase();
+        } catch {
+          return "";
+        }
+      }
+
+      function extractTargetEndpoint(configStr) {
+        try {
+          const obj = JSON.parse(configStr);
+          if (obj.netconMeta && obj.netconMeta.endpointHost) {
+            return [obj.netconMeta.endpointHost, obj.netconMeta.endpointPort || 443];
+          }
+          const ob = obj.outbounds && obj.outbounds[0];
+          const s = ob && ob.settings;
+          if (!s) return null;
+          if (s.vnext && s.vnext[0] && s.vnext[0].address) {
+            return [s.vnext[0].address, s.vnext[0].port || 443];
+          }
+          if (s.servers && s.servers[0] && s.servers[0].address) {
+            return [s.servers[0].address, s.servers[0].port || 443];
+          }
+        } catch {}
+        return null;
+      }
+
+      function appendSentinelLog(line) {
+        if (state.sentinelPaused) return;
+        state.sentinelLogs.push(line);
+        if (state.sentinelLogs.length > 24) state.sentinelLogs.shift();
+        renderSentinelLogs();
+      }
+
+      function showError(msg) {
+        const el = document.getElementById("error-banner");
+        const txt = document.getElementById("error-banner-text");
+        if (!msg) {
+          el.classList.add("hidden");
+        } else {
+          txt.textContent = msg;
+          el.classList.remove("hidden");
+        }
+      }
+
+      // Render F-16 Raptor MFD SVG gauge matching DesignTwoGauge in NetconDashboard.kt
+      function renderGaugeSvg(svgEl, progress, secondaryProgress, accentColor, secondaryColor) {
+        const p = Math.max(0, Math.min(1, progress));
+        const sp = Math.max(0, Math.min(1, secondaryProgress || 0));
+        const polar = (r, deg) => {
+          const rad = (deg * Math.PI) / 180;
+          return [50 + Math.cos(rad) * r, 50 + Math.sin(rad) * r];
+        };
+        const arcPath = (r, startDeg, endDeg) => {
+          const [sx, sy] = polar(r, startDeg);
+          const [ex, ey] = polar(r, endDeg);
+          const large = endDeg - startDeg <= 180 ? 0 : 1;
+          return `M ${sx.toFixed(2)} ${sy.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`;
+        };
+
+        let ticksHtml = "";
+        for (let t = 0; t <= 24; t++) {
+          const deg = 135 + t * (270 / 24);
+          const major = t % 4 === 0;
+          const lit = t / 24 <= p && p > 0.01;
+          const [ix, iy] = polar(major ? 32.5 : 35.5, deg);
+          const [ox, oy] = polar(39, deg);
+          const stroke = lit ? accentColor : major ? accentColor + "88" : "#334155";
+          ticksHtml += `<line x1="${ix.toFixed(2)}" y1="${iy.toFixed(2)}" x2="${ox.toFixed(2)}" y2="${oy.toFixed(2)}" stroke="${stroke}" stroke-width="${major ? 1.4 : 0.85}" />`;
+        }
+
+        const needleDeg = 135 + 270 * p;
+        const [nx, ny] = polar(28.5, needleDeg);
+        const dSize = 3.2;
+        const diamondPts = `${nx.toFixed(2)},${(ny - dSize).toFixed(2)} ${(nx + dSize).toFixed(2)},${ny.toFixed(2)} ${nx.toFixed(2)},${(ny + dSize).toFixed(2)} ${(nx - dSize).toFixed(2)},${ny.toFixed(2)}`;
+
+        svgEl.innerHTML = `
+          <defs>
+            <radialGradient id="bezel-${accentColor.replace("#", "")}" cx="45%" cy="35%" r="65%">
+              <stop offset="0%" stop-color="#283546" />
+              <stop offset="60%" stop-color="#151E29" />
+              <stop offset="100%" stop-color="#090E14" />
+            </radialGradient>
+          </defs>
+          <circle cx="50" cy="50" r="47.5" fill="url(#bezel-${accentColor.replace("#", "")})" />
+          <circle cx="50" cy="50" r="45.5" fill="none" stroke="${accentColor}" stroke-opacity="0.35" stroke-width="1" />
+          <circle cx="50" cy="50" r="41.5" fill="#040A0E" />
+          <circle cx="50" cy="50" r="26" fill="none" stroke="${accentColor}" stroke-opacity="0.12" stroke-width="0.8" stroke-dasharray="3 3" />
+          <line x1="20" y1="50" x2="80" y2="50" stroke="${accentColor}" stroke-opacity="0.12" stroke-width="0.7" />
+          <line x1="50" y1="20" x2="50" y2="80" stroke="${accentColor}" stroke-opacity="0.12" stroke-width="0.7" />
+          <!-- Corner HUD Brackets -->
+          <g stroke="${accentColor}" stroke-opacity="0.42" stroke-width="1.1" fill="none">
+            <path d="M 23 29 L 23 23 L 29 23" />
+            <path d="M 71 23 L 77 23 L 77 29" />
+            <path d="M 23 71 L 23 77 L 29 77" />
+            <path d="M 71 77 L 77 77 L 77 71" />
+          </g>
+          <path d="${arcPath(34.5, 135, 405)}" fill="none" stroke="${accentColor}" stroke-opacity="0.18" stroke-width="2.4" stroke-linecap="round" />
+          ${p > 0.01 ? `<path d="${arcPath(34.5, 135, 135 + 270 * p)}" fill="none" stroke="${accentColor}" stroke-width="2.8" stroke-linecap="round" />` : ""}
+          <path d="${arcPath(29, 135, 405)}" fill="none" stroke="${secondaryColor}" stroke-opacity="0.14" stroke-width="1.4" />
+          ${sp > 0.01 ? `<path d="${arcPath(29, 135, 135 + 270 * sp)}" fill="none" stroke="${secondaryColor}" stroke-opacity="0.85" stroke-width="1.8" stroke-linecap="round" />` : ""}
+          ${ticksHtml}
+          <line x1="50" y1="50" x2="${nx.toFixed(2)}" y2="${ny.toFixed(2)}" stroke="${accentColor}" stroke-opacity="0.85" stroke-width="1.8" />
+          <polygon points="${diamondPts}" fill="${accentColor}" />
+          <circle cx="50" cy="50" r="4" fill="#040A0E" />
+          <circle cx="50" cy="50" r="2.4" fill="${accentColor}" />
+        `;
+      }
+
+      function renderFlagBadge(code) {
+        const el = document.getElementById("flag-badge");
+        if (code === "SG") {
+          el.innerHTML = `
+            <svg viewBox="0 0 38 28" style="width:100%;height:100%;border-radius:4px;">
+              <rect x="0" y="0" width="38" height="14" fill="#EF3340" />
+              <rect x="0" y="14" width="38" height="14" fill="#FFFFFF" />
+              <circle cx="10.5" cy="7" r="4.4" fill="#FFFFFF" />
+              <circle cx="12.5" cy="7" r="3.5" fill="#EF3340" />
+            </svg>
+          `;
+        } else {
+          el.innerHTML = `<span style="color:#F0C99E;font-size:12px;font-weight:700;">${code}</span>`;
+        }
+      }
+
+      function renderSentinelLogs() {
+        const box = document.getElementById("sentinel-log-box");
+        const sub = document.getElementById("sentinel-subtitle");
+        const btn = document.getElementById("sentinel-pause-btn");
+        sub.textContent = state.sentinelPaused ? "STREAM PAUSED · LOCAL TELEMETRY" : "XRAY CORE + LOCAL SERVER MATCH";
+        btn.textContent = state.sentinelPaused ? "RESUME" : "PAUSE";
+
+        if (state.sentinelLogs.length === 0) {
+          box.innerHTML = `<div class="sentinel-line" style="color:#64748b;">[SENTINEL] Stream cleared. Awaiting tunnel or config activity…</div>`;
+          return;
+        }
+        box.innerHTML = state.sentinelLogs
+          .slice(-5)
+          .map(line => {
+            let color = "#cbd5e1";
+            if (line.startsWith("[ERR]")) color = "#fca5a5";
+            else if (line.startsWith("[VPN]")) color = "#4ade80";
+            else if (line.startsWith("[LOCAL]")) color = "#fcd34d";
+            else if (line.startsWith("[PING]")) color = "#38bdf8";
+            return `<div class="sentinel-line" style="color:${color};">${line.replace(/</g, "&lt;")}</div>`;
+          })
+          .join("");
+      }
+
+      function updateDashboardUI() {
+        const proto = getProtocol(state.savedConfig);
+        const protoLabel = !proto || proto === "FREEDOM" ? "VLESS-REALITY" : proto;
+        const pingLabel = state.pingMs !== null ? state.pingMs + "ms" : "—";
+        const code = inferCountryCode(state.serverLocation, state.serverLat, state.serverLon) || "SG";
+
+        const logoDot = document.getElementById("logo-card-dot");
+        const logoMeta = document.getElementById("logo-card-meta");
+        if (logoDot) {
+          logoDot.style.background =
+            state.vpnState === "connected" ? "#22ff88" : state.vpnState === "connecting" ? "#f5a623" : "#d9822b";
+        }
+        if (logoMeta) {
+          logoMeta.textContent = `${protoLabel}  ·  XRAY CORE  ·  ZERO-LOG`;
+        }
+
+        renderFlagBadge(code);
+        document.getElementById("server-name-text").textContent = state.serverName || "No Server Selected";
+        document.getElementById("server-meta-text").textContent = `• ${protoLabel} | ${state.serverLocation || "PORT: 443"} | PING: ${pingLabel}`;
+        document.getElementById("server-dot").style.background = state.vpnState === "connected" ? "#22ff88" : "#d9822b";
+
+        // Telemetry status pill (with pulsating dot on CONNECTING / ONLINE) & F-16 HUD chassis
+        const pill = document.getElementById("status-pill");
+        const pillDot = document.getElementById("status-pill-dot");
+        const pillText = document.getElementById("status-pill-text");
+        const chassisBtn = document.getElementById("vpn-power-btn");
+        const inner = document.getElementById("chassis-inner");
+        const bolt = document.getElementById("chassis-bolt");
+        const word = document.getElementById("chassis-word");
+        const durEl = document.getElementById("chassis-duration");
+        const pitchLadder = document.getElementById("chassis-pitch-ladder");
+        const lockRing = document.getElementById("chassis-lock-ring");
+        const radarWave = document.getElementById("chassis-radar-wave");
+
+        inner.className = "chassis-inner " + state.vpnState;
+        pillDot.classList.remove("pulsing-online", "pulsing-connecting");
+
+        if (state.vpnState === "connected") {
+          const c = "#22ff88";
+          pill.style.background = "rgba(34, 255, 136, 0.14)";
+          pill.style.borderColor = "rgba(34, 255, 136, 0.48)";
+          pill.style.color = c;
+          pillDot.style.background = c;
+          pillDot.classList.add("pulsing-online");
+          pillText.textContent = "ONLINE";
+          chassisBtn.style.borderColor = "rgba(34, 255, 136, 0.65)";
+          bolt.setAttribute("fill", c);
+          word.textContent = "ONLINE";
+          word.style.color = c;
+          pitchLadder.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke-opacity", "0.82");
+          radarWave.setAttribute("stroke", c);
+          durEl.classList.remove("hidden");
+          const h = String(Math.floor(state.elapsedSeconds / 3600)).padStart(2, "0");
+          const m = String(Math.floor((state.elapsedSeconds % 3600) / 60)).padStart(2, "0");
+          const s = String(state.elapsedSeconds % 60).padStart(2, "0");
+          durEl.textContent = `${h}:${m}:${s}`;
+        } else if (state.vpnState === "connecting") {
+          const c = "#f5a623";
+          pill.style.background = "rgba(245, 166, 35, 0.15)";
+          pill.style.borderColor = "rgba(245, 166, 35, 0.5)";
+          pill.style.color = c;
+          pillDot.style.background = c;
+          pillDot.classList.add("pulsing-connecting");
+          pillText.textContent = "CONNECTING";
+          chassisBtn.style.borderColor = "rgba(245, 166, 35, 0.65)";
+          bolt.setAttribute("fill", c);
+          word.textContent = "WAIT";
+          word.style.color = c;
+          pitchLadder.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke-opacity", "0.78");
+          radarWave.setAttribute("stroke", c);
+          durEl.classList.add("hidden");
+        } else if (state.vpnState === "error") {
+          const c = "#ef4444";
+          pill.style.background = "rgba(239, 68, 68, 0.15)";
+          pill.style.borderColor = "rgba(239, 68, 68, 0.5)";
+          pill.style.color = c;
+          pillDot.style.background = c;
+          pillText.textContent = "ATTENTION";
+          chassisBtn.style.borderColor = "rgba(239, 68, 68, 0.65)";
+          bolt.setAttribute("fill", c);
+          word.textContent = "ERROR";
+          word.style.color = c;
+          pitchLadder.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke-opacity", "0.55");
+          durEl.classList.add("hidden");
+        } else {
+          const c = "#38bdf8";
+          pill.style.background = "rgba(148, 163, 184, 0.14)";
+          pill.style.borderColor = "rgba(148, 163, 184, 0.35)";
+          pill.style.color = "#94a3b8";
+          pillDot.style.background = "#94a3b8";
+          pillText.textContent = "OFFLINE";
+          chassisBtn.style.borderColor = "rgba(56, 189, 248, 0.45)";
+          bolt.setAttribute("fill", c);
+          word.textContent = "OFFLINE";
+          word.style.color = c;
+          pitchLadder.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke", c);
+          lockRing.setAttribute("stroke-opacity", "0.38");
+          durEl.classList.add("hidden");
+        }
+
+        // Left MFD: Latency Radar Gauge
+        document.getElementById("ping-top-label").textContent = "ms";
+        document.getElementById("ping-val").textContent = state.pingMs !== null ? String(state.pingMs) : "—";
+        const pingNorm = Math.min(250, Math.max(0, state.pingMs || 0)) / 250;
+        const pingQuality = state.pingMs !== null ? 1 - pingNorm : 0;
+        renderGaugeSvg(document.getElementById("ping-svg"), pingNorm, pingQuality, "#22FF88", "#F5A623");
+
+        // Right MFD: TX Speed Uplink Gauge
+        const txRate = state.vpnState === "connected" ? Math.max(0.1, state.uploadMbps) : state.uploadMbps;
+        const rxRate = state.downloadMbps;
+        document.getElementById("bw-val").textContent = txRate.toFixed(1);
+        renderGaugeSvg(
+          document.getElementById("bw-svg"),
+          Math.min(1, txRate / 25),
+          Math.min(1, rxRate / 50),
+          "#38BDF8",
+          "#22FF88"
+        );
+
+        // Bottom F-16 DED (Data Entry Display) odometer cards
+        document.getElementById("rx-val").textContent = formatBytes(state.receivedBytes);
+        document.getElementById("tx-val").textContent = formatBytes(state.sentBytes);
+
+        // Map readout bars
+        document.getElementById("map-loc-name").textContent = state.serverLocation || "Location Not Set";
+        document.getElementById("map-loc-coords").textContent =
+          state.serverLat !== null && state.serverLon !== null
+            ? `${state.serverLat.toFixed(4)}°, ${state.serverLon.toFixed(4)}° · Tap a country hub or zoom up to 18×`
+            : "Tap a country hub or import a server profile";
+
+        const sourceSuffix = state.userLocationSource ? ` · ${state.userLocationSource}` : " · Auto-detected";
+        document.getElementById("user-loc-coords").textContent =
+          state.userLocationBusy
+            ? "Requesting location permission & reading GPS/Network…"
+            : state.userLat !== null && state.userLon !== null
+              ? `${state.userLat.toFixed(4)}°, ${state.userLon.toFixed(4)}°${sourceSuffix}`
+              : state.userLocationSource || "Tap AUTO LOCATE to grant location permission";
+        document.getElementById("user-loc-pin-btn").textContent =
+          state.userLocationBusy
+            ? "LOCATING…"
+            : state.userLat !== null && state.userLon !== null
+              ? "REFRESH GPS"
+              : "AUTO LOCATE";
+
+        // Info tab
+        document.getElementById("info-state").textContent = `${state.vpnState.toUpperCase()} · Xray`;
+        document.getElementById("info-proto").textContent = protoLabel;
+        document.getElementById("info-node").textContent = state.serverName || "—";
+      }
+
+      async function refreshPing() {
+        if (state.pingBusy) return;
+        state.pingBusy = true;
+        updateDashboardUI();
+        const ep = extractTargetEndpoint(state.savedConfig) || ["1.1.1.1", 443];
+        try {
+          const res = await fetch(`/api/ping?host=${encodeURIComponent(ep[0])}&port=${encodeURIComponent(ep[1])}`);
+          const data = await res.json();
+          state.pingMs = typeof data.latencyMs === "number" ? data.latencyMs : null;
+          appendSentinelLog(
+            state.pingMs !== null
+              ? `[PING] Handshake latency (${ep[0]}:${ep[1]}): ${state.pingMs}ms`
+              : `[PING] Direct probe timed out (${ep[0]}:${ep[1]})`
+          );
+        } catch {
+          state.pingMs = null;
+          appendSentinelLog("[PING] Direct probe timed out");
+        } finally {
+          state.pingBusy = false;
+          updateDashboardUI();
+        }
+      }
+
+      // Xray Link & JSON Parser matching NativeXrayConfig.java
+      function decodeBase64(val) {
+        let norm = val.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+        while (norm.length % 4 !== 0) norm += "=";
+        return decodeURIComponent(escape(atob(norm)));
+      }
+
+      function stabilizedSockopt() {
+        return {
+          tcpKeepAliveIdle: 45,
+          tcpKeepAliveInterval: 15,
+          tcpUserTimeout: 10000,
+          tcpFastOpen: false,
+          tcpNoDelay: true
+        };
+      }
+
+      function baseXrayConfig(proxyOutbound, meta) {
+        const cfg = {
+          log: { loglevel: "none" },
+          dns: { servers: ["1.1.1.1", "8.8.8.8"] },
+          inbounds: [
+            { tag: "socks", listen: "127.0.0.1", port: 10808, protocol: "socks", settings: { udp: true } },
+            { tag: "http", listen: "127.0.0.1", port: 10809, protocol: "http", settings: {} }
+          ],
+          outbounds: [
+            proxyOutbound,
+            { tag: "direct", protocol: "freedom", settings: {} },
+            { tag: "block", protocol: "blackhole", settings: {} }
+          ],
+          routing: {
+            domainStrategy: "IPIfNonMatch",
+            rules: [
+              {
+                type: "field",
+                ip: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"],
+                outboundTag: "direct"
+              }
+            ]
+          }
+        };
+        if (meta) cfg.netconMeta = meta;
+        return cfg;
+      }
+
+      function parseXrayInput(raw) {
+        if (!raw || !raw.trim()) throw new Error("Paste a server link or Xray JSON configuration.");
+        const val = raw.trim();
+        if (val.startsWith("{")) {
+          const cfg = JSON.parse(val);
+          if (!Array.isArray(cfg.outbounds) || cfg.outbounds.length === 0) {
+            throw new Error("Xray JSON must contain at least one outbound.");
+          }
+          return { config: cfg, name: "Imported Xray configuration" };
+        }
+        const lines = val.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        if (lines.length > 1) throw new Error("Import one server link at a time.");
+        const link = lines[0];
+        if (link.startsWith("vmess://")) {
+          const data = JSON.parse(decodeBase64(link.slice(8)));
+          const address = data.add || "";
+          const port = parseInt(data.port, 10) || 443;
+          const id = data.id || "";
+          if (!address || !id) throw new Error("The server link needs a host, credential and valid port.");
+          const net = (data.net || "tcp").toLowerCase();
+          const sec = (data.tls || "none").toLowerCase();
+          return {
+            name: data.ps || "VMess server",
+            config: baseXrayConfig(
+              {
+                tag: "proxy",
+                protocol: "vmess",
+                settings: { vnext: [{ address, port, users: [{ id, alterId: parseInt(data.aid || "0", 10) || 0, security: data.scy || "auto" }] }] },
+                streamSettings: { network: net, security: sec, sockopt: stabilizedSockopt() }
+              },
+              { displayProtocol: `VMESS-${net.toUpperCase()}-${sec.toUpperCase()}`, endpointHost: address, endpointPort: port }
+            )
+          };
+        }
+        if (link.startsWith("vless://") || link.startsWith("trojan://")) {
+          const u = new URL(link);
+          const protocol = u.protocol === "vless:" ? "vless" : "trojan";
+          const address = u.hostname;
+          const port = parseInt(u.port, 10) || 443;
+          const cred = decodeURIComponent(u.username || "");
+          if (!address || !cred) throw new Error("The server link needs a host, credential and valid port.");
+          const name = u.hash ? decodeURIComponent(u.hash.slice(1)) : protocol.toUpperCase() + " server";
+          const net = (u.searchParams.get("type") || "tcp").toLowerCase();
+          const sec = (u.searchParams.get("security") || (protocol === "trojan" ? "tls" : "none")).toLowerCase();
+          const settings = protocol === "vless"
+            ? { vnext: [{ address, port, users: [{ id: cred, encryption: u.searchParams.get("encryption") || "none" }] }] }
+            : { servers: [{ address, port, password: cred }] };
+          return {
+            name,
+            config: baseXrayConfig(
+              {
+                tag: "proxy",
+                protocol,
+                settings,
+                streamSettings: {
+                  network: net,
+                  security: sec,
+                  sockopt: stabilizedSockopt()
+                }
+              },
+              { displayProtocol: `${protocol.toUpperCase()}-${net.toUpperCase()}-${sec.toUpperCase()}`, endpointHost: address, endpointPort: port }
+            )
+          };
+        }
+        if (link.startsWith("ss://")) {
+          const parts = link.slice(5).split("#");
+          const name = parts[1] ? decodeURIComponent(parts[1]) : "Shadowsocks server";
+          const main = parts[0].split("?")[0];
+          let address = "1.1.1.1";
+          let port = 443;
+          let method = "2022-blake3-aes-128-gcm";
+          let password = "ss";
+          if (main.includes("@")) {
+            const atIdx = main.lastIndexOf("@");
+            const hostPort = main.slice(atIdx + 1);
+            const colonIdx = hostPort.lastIndexOf(":");
+            if (colonIdx > 0) {
+              address = hostPort.slice(0, colonIdx);
+              port = parseInt(hostPort.slice(colonIdx + 1), 10) || 443;
+            }
+          }
+          return {
+            name,
+            config: baseXrayConfig(
+              {
+                tag: "proxy",
+                protocol: "shadowsocks",
+                settings: { servers: [{ address, port, method, password, uot: true }] },
+                streamSettings: { network: "tcp", security: "none", sockopt: stabilizedSockopt() }
+              },
+              { displayProtocol: "SS-2022-AEAD", endpointHost: address, endpointPort: port }
+            )
+          };
+        }
+        if (link.startsWith("socks5://") || link.startsWith("socks://")) {
+          const u = new URL(link);
+          const address = u.hostname;
+          const port = parseInt(u.port, 10) || 1080;
+          if (!address) throw new Error("The SOCKS5 server link needs a valid host and port.");
+          const name = u.hash ? decodeURIComponent(u.hash.slice(1)) : "SOCKS5 server";
+          const serverObj = { address, port };
+          if (u.username) {
+            serverObj.users = [{ user: decodeURIComponent(u.username), pass: decodeURIComponent(u.password || "") }];
+          }
+          return {
+            name,
+            config: baseXrayConfig(
+              {
+                tag: "proxy",
+                protocol: "socks",
+                settings: { servers: [serverObj] },
+                streamSettings: { network: "tcp", security: "none", sockopt: stabilizedSockopt() }
+              },
+              { displayProtocol: "SOCKS5-TCP", endpointHost: address, endpointPort: port }
+            )
+          };
+        }
+        throw new Error("Use a vmess://, vless://, trojan://, ss://, socks5:// link, or Xray JSON.");
+      }
+
+      function saveServer(configStr, name, loc, lat, lon, targetZoom = 2.6) {
+        state.savedConfig = configStr;
+        state.serverName = name;
+        state.serverLocation = loc;
+        state.serverLat = lat;
+        state.serverLon = lon;
+        localStorage.setItem("xray_config", configStr);
+        localStorage.setItem("server_name", name);
+        localStorage.setItem("server_location", loc);
+        if (lat !== null && lon !== null) {
+          localStorage.setItem("server_latitude", String(lat));
+          localStorage.setItem("server_longitude", String(lon));
+          const [nx, ny] = projectNormalized(lat, lon);
+          state.mapCenterX = nx;
+          state.mapCenterY = ny;
+          state.mapZoom = Math.max(state.mapZoom, targetZoom);
+        }
+        updateDashboardUI();
+        updateReticleReadout();
+        refreshPing();
+      }
+
+      function clampPan(val, zoom) {
+        const margin = Math.max(0.015, Math.min(0.42, 0.38 / Math.max(1, zoom)));
+        return Math.max(margin, Math.min(1 - margin, val));
+      }
+
+      function updateReticleReadout() {
+        const chipEl = document.getElementById("map-chip-text");
+        if (chipEl) {
+          chipEl.textContent = `17 REGIONS · ${state.mapZoom.toFixed(1)}×`;
+        }
+        // Update inline zoom preset active state
+        document.querySelectorAll("#inline-zoom-presets button").forEach(btn => {
+          const z = parseFloat(btn.dataset.zoom || "1");
+          const active = Math.abs(state.mapZoom - z) < z * 0.22;
+          btn.style.borderColor = active ? "#38bdf8" : "#313b4b";
+          btn.style.color = active ? "#38bdf8" : "#cbd5e1";
+          btn.style.background = active ? "rgba(56, 189, 248, 0.16)" : "rgba(15, 20, 28, 0.9)";
+        });
+        document.querySelectorAll("#full-zoom-presets button").forEach(btn => {
+          const z = parseFloat(btn.dataset.fullZoom || btn.dataset.zoom || "1");
+          const active = Math.abs(state.fullZoom - z) < z * 0.22;
+          btn.style.borderColor = active ? "#38bdf8" : "#313b4b";
+          btn.style.color = active ? "#38bdf8" : "#cbd5e1";
+          btn.style.background = active ? "rgba(56, 189, 248, 0.16)" : "rgba(15, 20, 28, 0.92)";
+        });
+      }
+
+      // Draw World Vector Map on Canvas with up to 18x magnification, multi-tier graticules, and active connection animation
+      function drawMapCanvas(canvas, camZoom, camX, camY, activeLat, activeLon, activeCode, inspectedCode, userLat, userLon, showReticle, time) {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        const dpr = window.devicePixelRatio || 1;
+        if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
+          canvas.width = Math.round(rect.width * dpr);
+          canvas.height = Math.round(rect.height * dpr);
+        }
+        const ctx = canvas.getContext("2d");
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        const w = rect.width;
+        const h = rect.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const mapW = w * camZoom;
+        const mapH = mapW / 1.607;
+        const ox = w / 2 - camX * mapW;
+        const oy = h / 2 - camY * mapH;
+
+        const connected = state.vpnState === "connected";
+        const connecting = state.vpnState === "connecting";
+        const beaconColor = connected ? "#4ADE80" : connecting ? "#F0C99E" : "#D97D48";
+
+        // Multi-resolution Graticules (30°, 10° at >=3.5x, 2° at >=9x)
+        const majorStep = camZoom >= 9.0 ? 2 : camZoom >= 3.5 ? 10 : 30;
+        for (let lon = -180; lon <= 180; lon += majorStep) {
+          const [gx] = projectNormalized(0, lon);
+          const sx = ox + gx * mapW;
+          if (sx >= 0 && sx <= w) {
+            const isMajor30 = lon % 30 === 0;
+            ctx.strokeStyle = isMajor30 ? "rgba(49, 59, 75, 0.34)" : "rgba(56, 189, 248, 0.13)";
+            ctx.lineWidth = isMajor30 ? 0.65 : 0.4;
+            ctx.beginPath();
+            ctx.moveTo(sx, 0);
+            ctx.lineTo(sx, h);
+            ctx.stroke();
+          }
+        }
+        for (let lat = -60; lat <= 76; lat += majorStep) {
+          const [, gy] = projectNormalized(lat, 0);
+          const sy = oy + gy * mapH;
+          if (sy >= 0 && sy <= h) {
+            const isMajor30 = lat % 30 === 0;
+            ctx.strokeStyle = isMajor30 ? "rgba(49, 59, 75, 0.34)" : "rgba(56, 189, 248, 0.13)";
+            ctx.lineWidth = isMajor30 ? 0.65 : 0.4;
+            ctx.beginPath();
+            ctx.moveTo(0, sy);
+            ctx.lineTo(w, sy);
+            ctx.stroke();
+          }
+        }
+
+        // Countries
+        for (const c of state.countries) {
+          const isAct = activeCode && c.c === activeCode;
+          const isInsp = inspectedCode && c.c === inspectedCode;
+          const isHub = HUB_CODE_SET.has(c.c);
+          ctx.fillStyle = isAct
+            ? "rgba(217, 125, 72, 0.34)"
+            : isInsp
+              ? "rgba(56, 189, 248, 0.28)"
+              : isHub
+                ? "#283548"
+                : "#1E2736";
+          ctx.strokeStyle = isAct ? beaconColor : isInsp ? "#38BDF8" : isHub ? "#4A5D78" : "#334155";
+          ctx.lineWidth = isAct || isInsp ? 1.35 : camZoom > 5 ? 0.9 : 0.7;
+
+          for (const ring of c.rings) {
+            if (ring.length < 6) continue;
+            ctx.beginPath();
+            for (let k = 0; k < ring.length; k += 2) {
+              const sx = ox + ring[k] * mapW;
+              const sy = oy + ring[k + 1] * mapH;
+              if (k === 0) ctx.moveTo(sx, sy);
+              else ctx.lineTo(sx, sy);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+
+        // Hub dots + high-zoom city callouts
+        for (const hub of WORLD_HUB_NODES) {
+          if (hub.code === activeCode) continue;
+          const [hx, hy] = projectNormalized(hub.latitude, hub.longitude);
+          const px = ox + hx * mapW;
+          const py = oy + hy * mapH;
+          if (px < -30 || px > w + 30 || py < -30 || py > h + 30) continue;
+          const sel = hub.code === inspectedCode;
+          const dotScale = camZoom >= 6 ? 1.25 : 1.0;
+          ctx.beginPath();
+          ctx.arc(px, py, (sel ? 9.0 : 5.5) * dotScale, 0, Math.PI * 2);
+          ctx.fillStyle = sel ? "rgba(56, 189, 248, 0.32)" : "rgba(148, 163, 184, 0.18)";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(px, py, (sel ? 4.0 : 2.7) * dotScale, 0, Math.PI * 2);
+          ctx.fillStyle = sel ? "#38BDF8" : "#94A3B8";
+          ctx.fill();
+
+          if (camZoom >= 2.6 || sel) {
+            ctx.font = "700 9px 'JetBrains Mono', monospace";
+            ctx.fillStyle = sel ? "#38BDF8" : "rgba(226, 232, 240, 0.85)";
+            ctx.fillText(camZoom >= 4.5 ? `${hub.code} · ${hub.cityLabel}` : hub.code, px + 6, py - 5);
+          }
+        }
+
+        // User pin
+        if (userLat !== null && userLon !== null) {
+          const [ux, uy] = projectNormalized(userLat, userLon);
+          const px = ox + ux * mapW;
+          const py = oy + uy * mapH;
+          const userPulse = ((time % 2000) / 2000);
+          ctx.beginPath();
+          ctx.arc(px, py, 6 + userPulse * 10, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(56, 189, 248, ${(1 - userPulse) * 0.5})`;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(px, py, 8, 0, Math.PI * 2);
+          ctx.fillStyle = "#06131A";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(px, py, 5, 0, Math.PI * 2);
+          ctx.fillStyle = "#38BDF8";
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fill();
+        }
+
+        // Active server beacon & encrypted tunnel animation
+        if (activeLat !== null && activeLon !== null) {
+          const pulse = (time % 2200) / 2200;
+          const packetProgress = (time % 1450) / 1450;
+          const orbitAngle = ((time % 6000) / 6000) * Math.PI * 2;
+          const [ax, ay] = projectNormalized(activeLat, activeLon);
+          const px = ox + ax * mapW;
+          const py = oy + ay * mapH;
+
+          if (connected || connecting) {
+            const hasUserOrigin = userLat !== null && userLon !== null;
+            const oLat = hasUserOrigin ? userLat : Math.max(-40, Math.min(55, activeLat * 0.5 + 25));
+            const oLon = hasUserOrigin ? userLon : (activeLon > 20 ? activeLon - 55 : activeLon + 55);
+            const [rx, ry] = projectNormalized(oLat, oLon);
+            const sx = ox + rx * mapW;
+            const sy = oy + ry * mapH;
+            const span = Math.hypot(px - sx, py - sy);
+            const lift = Math.max(26, Math.min(110, span * 0.28));
+            const ctrlX = (sx + px) / 2;
+            const ctrlY = Math.min(sy, py) - lift;
+
+            // 1. Wide luminous corridor
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.quadraticCurveTo(ctrlX, ctrlY, px, py);
+            ctx.strokeStyle = connected ? "rgba(74, 222, 128, 0.16)" : "rgba(240, 201, 158, 0.14)";
+            ctx.lineWidth = 6.5;
+            ctx.lineCap = "round";
+            ctx.stroke();
+
+            // 2. Animated dashed encrypted stream
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.quadraticCurveTo(ctrlX, ctrlY, px, py);
+            ctx.strokeStyle = beaconColor;
+            ctx.lineWidth = 2.0;
+            ctx.setLineDash([10, 7]);
+            ctx.lineDashOffset = -packetProgress * 34;
+            ctx.stroke();
+            ctx.restore();
+
+            // 3. Origin anchor ring
+            ctx.beginPath();
+            ctx.arc(sx, sy, 4 + pulse * 8, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(56, 189, 248, ${(1 - pulse) * 0.55})`;
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+
+            // 4. Traveling uplink & downlink encrypted data packets along Bezier curve
+            const evalQuad = t => {
+              const inv = 1 - t;
+              return [
+                inv * inv * sx + 2 * inv * t * ctrlX + t * t * px,
+                inv * inv * sy + 2 * inv * t * ctrlY + t * t * py
+              ];
+            };
+
+            const packetCount = connected ? 3 : 2;
+            for (let i = 0; i < packetCount; i++) {
+              const t = (packetProgress + i / packetCount) % 1.0;
+              const [bx, by] = evalQuad(t);
+              ctx.beginPath();
+              ctx.arc(bx, by, 6.8, 0, Math.PI * 2);
+              ctx.fillStyle = connected ? "rgba(74, 222, 128, 0.28)" : "rgba(240, 201, 158, 0.28)";
+              ctx.fill();
+              ctx.beginPath();
+              ctx.arc(bx, by, 3.1, 0, Math.PI * 2);
+              ctx.fillStyle = "#FFFFFF";
+              ctx.fill();
+            }
+
+            if (connected) {
+              const rt = 1.0 - ((packetProgress + 0.42) % 1.0);
+              const [rxPt, ryPt] = evalQuad(rt);
+              ctx.beginPath();
+              ctx.arc(rxPt, ryPt, 5.5, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(56, 189, 248, 0.28)";
+              ctx.fill();
+              ctx.beginPath();
+              ctx.arc(rxPt, ryPt, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = "#38BDF8";
+              ctx.fill();
+            }
+          }
+
+          // 5. Triple concentric radar waves around active server
+          const waveCount = connected ? 3 : 2;
+          for (let wIdx = 0; wIdx < waveCount; wIdx++) {
+            const wavePhase = (pulse + wIdx / waveCount) % 1.0;
+            ctx.beginPath();
+            ctx.arc(px, py, 6 + wavePhase * (connected ? 28 : 20), 0, Math.PI * 2);
+            ctx.strokeStyle = beaconColor;
+            ctx.globalAlpha = (1 - wavePhase) * (connected ? 0.65 : 0.45);
+            ctx.lineWidth = 1.6;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+
+          // 6. Rotating tactical lock ring when connected
+          if (connected) {
+            const lockR = 13.5;
+            for (let seg = 0; seg < 4; seg++) {
+              const startRad = orbitAngle + seg * (Math.PI / 2);
+              ctx.beginPath();
+              ctx.arc(px, py, lockR, startRad, startRad + (38 * Math.PI) / 180);
+              ctx.strokeStyle = "rgba(74, 222, 128, 0.88)";
+              ctx.lineWidth = 1.8;
+              ctx.lineCap = "round";
+              ctx.stroke();
+            }
+          }
+
+          // 7. Core node beacon
+          ctx.beginPath();
+          ctx.arc(px, py, 9, 0, Math.PI * 2);
+          ctx.fillStyle = connected ? "rgba(74, 222, 128, 0.25)" : "rgba(217, 125, 72, 0.22)";
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(px, py, 5.5, 0, Math.PI * 2);
+          ctx.fillStyle = beaconColor;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(px, py, 2.3, 0, Math.PI * 2);
+          ctx.fillStyle = "#07090D";
+          ctx.fill();
+        }
+
+        // Precision Crosshair Reticle Overlay for pinpointing
+        if (showReticle) {
+          const cx = w / 2;
+          const cy = h / 2;
+          const ringR = 19;
+          const gap = 5.5;
+          const arm = 27;
+          ctx.save();
+          ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
+          ctx.lineWidth = 1.25;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(cx - arm, cy);
+          ctx.lineTo(cx - gap, cy);
+          ctx.moveTo(cx + gap, cy);
+          ctx.lineTo(cx + arm, cy);
+          ctx.moveTo(cx, cy - arm);
+          ctx.lineTo(cx, cy - gap);
+          ctx.moveTo(cx, cy + gap);
+          ctx.lineTo(cx, cy + arm);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
+          ctx.fillStyle = "#38BDF8";
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Live Zoom & Tunnel Distance HUD pill at bottom-left
+        let hudLabel = `ZOOM ${camZoom.toFixed(1)}×`;
+        if ((connected || connecting) && activeLat !== null && activeLon !== null && userLat !== null && userLon !== null) {
+          const dist = Math.round(distanceKm(userLat, userLon, activeLat, activeLon));
+          hudLabel = `${connected ? "TUNNEL ACTIVE" : "HANDSHAKE"} · ${dist} KM · ${camZoom.toFixed(1)}×`;
+        }
+        ctx.save();
+        ctx.font = "700 9.5px 'JetBrains Mono', monospace";
+        const textW = ctx.measureText(hudLabel).width;
+        const pillX = 8;
+        const pillY = h - 26;
+        ctx.fillStyle = "rgba(10, 14, 20, 0.84)";
+        ctx.strokeStyle = connected ? "rgba(74, 222, 128, 0.45)" : "rgba(49, 59, 75, 0.7)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, textW + 14, 18, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = connected ? "#4ADE80" : "#CBD5E1";
+        ctx.fillText(hudLabel, pillX + 7, pillY + 12.5);
+        ctx.restore();
+
+        ctx.restore();
+      }
+
+      // Setup interactive canvas pan, wheel focal zoom, double-click zoom, and tap
+      function attachMapInteractions(viewportEl, isFull) {
+        let dragging = false;
+        let moved = false;
+        let startX = 0;
+        let startY = 0;
+        let lastX = 0;
+        let lastY = 0;
+
+        const applyFocalZoom = (newZoomRaw, focalX, focalY) => {
+          const rect = viewportEl.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return;
+          const oldZoom = isFull ? state.fullZoom : state.mapZoom;
+          const newZoom = Math.max(1.0, Math.min(18.0, newZoomRaw));
+          const oldCx = isFull ? state.fullCenterX : state.mapCenterX;
+          const oldCy = isFull ? state.fullCenterY : state.mapCenterY;
+
+          const oldMapW = rect.width * oldZoom;
+          const oldMapH = oldMapW / 1.607;
+          const oldOx = rect.width / 2 - oldCx * oldMapW;
+          const oldOy = rect.height / 2 - oldCy * oldMapH;
+          const normX = (focalX - oldOx) / oldMapW;
+          const normY = (focalY - oldOy) / oldMapH;
+
+          const newMapW = rect.width * newZoom;
+          const newMapH = newMapW / 1.607;
+          const newCx = clampPan(normX - (focalX - rect.width / 2) / newMapW, newZoom);
+          const newCy = clampPan(normY - (focalY - rect.height / 2) / newMapH, newZoom);
+
+          if (isFull) {
+            state.fullZoom = newZoom;
+            state.fullCenterX = newCx;
+            state.fullCenterY = newCy;
+            updateFullMapBar();
+          } else {
+            state.mapZoom = newZoom;
+            state.mapCenterX = newCx;
+            state.mapCenterY = newCy;
+          }
+          updateReticleReadout();
+        };
+
+        viewportEl.addEventListener(
+          "wheel",
+          e => {
+            e.preventDefault();
+            const rect = viewportEl.getBoundingClientRect();
+            const fx = e.clientX - rect.left;
+            const fy = e.clientY - rect.top;
+            const curZoom = isFull ? state.fullZoom : state.mapZoom;
+            const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+            applyFocalZoom(curZoom * factor, fx, fy);
+          },
+          { passive: false }
+        );
+
+        viewportEl.addEventListener("dblclick", e => {
+          if (e.target.closest("button")) return;
+          const rect = viewportEl.getBoundingClientRect();
+          const fx = e.clientX - rect.left;
+          const fy = e.clientY - rect.top;
+          const curZoom = isFull ? state.fullZoom : state.mapZoom;
+          const targetZoom = curZoom >= 12.0 ? 1.0 : Math.min(18.0, curZoom * 2.1);
+          if (targetZoom === 1.0) {
+            if (isFull) {
+              state.fullZoom = 1.0;
+              state.fullCenterX = 0.5;
+              state.fullCenterY = 0.48;
+              updateFullMapBar();
+            } else {
+              state.mapZoom = 1.0;
+              state.mapCenterX = 0.5;
+              state.mapCenterY = 0.48;
+            }
+            updateReticleReadout();
+          } else {
+            applyFocalZoom(targetZoom, fx, fy);
+          }
+        });
+
+        viewportEl.addEventListener("pointerdown", e => {
+          if (e.target.closest("button")) return;
+          dragging = true;
+          moved = false;
+          startX = lastX = e.clientX;
+          startY = lastY = e.clientY;
+          viewportEl.setPointerCapture(e.pointerId);
+        });
+
+        viewportEl.addEventListener("pointermove", e => {
+          if (!dragging) return;
+          const dx = e.clientX - lastX;
+          const dy = e.clientY - lastY;
+          if (Math.hypot(e.clientX - startX, e.clientY - startY) > 5) moved = true;
+          lastX = e.clientX;
+          lastY = e.clientY;
+          if (!moved) return;
+          const rect = viewportEl.getBoundingClientRect();
+          const zoom = isFull ? state.fullZoom : state.mapZoom;
+          const mapW = rect.width * zoom;
+          const mapH = mapW / 1.607;
+          if (isFull) {
+            state.fullCenterX = clampPan(state.fullCenterX - dx / mapW, zoom);
+            state.fullCenterY = clampPan(state.fullCenterY - dy / mapH, zoom);
+            updateFullMapBar();
+          } else {
+            state.mapCenterX = clampPan(state.mapCenterX - dx / mapW, zoom);
+            state.mapCenterY = clampPan(state.mapCenterY - dy / mapH, zoom);
+            updateReticleReadout();
+          }
+        });
+
+        viewportEl.addEventListener("pointerup", e => {
+          if (!dragging) return;
+          dragging = false;
+          if (moved) return;
+          const rect = viewportEl.getBoundingClientRect();
+          const tapX = e.clientX - rect.left;
+          const tapY = e.clientY - rect.top;
+          const zoom = isFull ? state.fullZoom : state.mapZoom;
+          const cx = isFull ? state.fullCenterX : state.mapCenterX;
+          const cy = isFull ? state.fullCenterY : state.mapCenterY;
+          const mapW = rect.width * zoom;
+          const mapH = mapW / 1.607;
+          const ox = rect.width / 2 - cx * mapW;
+          const oy = rect.height / 2 - cy * mapH;
+
+          let hitHub = null;
+          let minD = Infinity;
+          for (const hub of WORLD_HUB_NODES) {
+            const [hx, hy] = projectNormalized(hub.latitude, hub.longitude);
+            const d = Math.hypot(ox + hx * mapW - tapX, oy + hy * mapH - tapY);
+            if (d < minD) {
+              minD = d;
+              hitHub = hub;
+            }
+          }
+
+          if (hitHub && minD <= 24) {
+            if (isFull) {
+              state.fullPickedHub = hitHub;
+              state.fullPickedLat = hitHub.latitude;
+              state.fullPickedLon = hitHub.longitude;
+              const [nx, ny] = projectNormalized(hitHub.latitude, hitHub.longitude);
+              state.fullCenterX = nx;
+              state.fullCenterY = ny;
+              if (state.fullZoom < 3.2) state.fullZoom = 3.6;
+              updateFullMapBar();
+            } else {
+              state.selectedHub = state.selectedHub && state.selectedHub.code === hitHub.code ? null : hitHub;
+              const [nx, ny] = projectNormalized(hitHub.latitude, hitHub.longitude);
+              state.mapCenterX = nx;
+              state.mapCenterY = ny;
+              if (state.mapZoom < 2.8) state.mapZoom = 3.2;
+              updateHubPopup();
+              updateReticleReadout();
+            }
+            return;
+          }
+
+          if (!isFull) {
+            state.selectedHub = null;
+            updateHubPopup();
+          }
+        });
+      }
+
+      function updateHubPopup() {
+        const pop = document.getElementById("map-hub-popup");
+        if (!state.selectedHub) {
+          pop.classList.add("hidden");
+          return;
+        }
+        document.getElementById("hub-popup-title").textContent = `${state.selectedHub.code} · ${state.selectedHub.countryName}`;
+        document.getElementById("hub-popup-city").textContent = state.selectedHub.cityLabel;
+        pop.classList.remove("hidden");
+      }
+
+      function updateFullMapBar() {
+        const [centerLat, centerLon] = unprojectNormalized(state.fullCenterX, state.fullCenterY);
+        const effLat = state.fullPickedHub ? state.fullPickedHub.latitude : state.serverLat;
+        const effLon = state.fullPickedHub ? state.fullPickedHub.longitude : state.serverLon;
+
+        document.getElementById("full-map-title").textContent = `WORLD SERVER MAP · ${state.fullZoom.toFixed(1)}×`;
+        document.getElementById("full-map-zoom-label").textContent = `ZOOM ${state.fullZoom.toFixed(1)}× · MAX 18.0×`;
+        document.getElementById("full-map-center-label").textContent = `CENTER: ${centerLat.toFixed(4)}°, ${centerLon.toFixed(4)}°`;
+        document.getElementById("full-map-picked-name").textContent = state.fullPickedHub
+          ? `${state.fullPickedHub.countryName} (${state.fullPickedHub.code})`
+          : state.serverLocation || state.serverName || "Active Server";
+        document.getElementById("full-map-picked-coords").textContent =
+          effLat !== null && effLon !== null
+            ? `${effLat.toFixed(4)}°, ${effLon.toFixed(4)}° · Tap a country hub to browse servers`
+            : "Tap any country hub to inspect regional servers";
+
+        const browseBtn = document.getElementById("full-map-browse-btn");
+        if (state.fullPickedHub) {
+          browseBtn.textContent = "BROWSE " + state.fullPickedHub.code;
+          browseBtn.classList.remove("hidden");
+        } else {
+          browseBtn.classList.add("hidden");
+        }
+      }
+
+      function renderPresetProfiles() {
+        const listEl = document.getElementById("preset-profile-list");
+        if (!listEl) return;
+        listEl.innerHTML = PRESET_PROFILES.map(
+          (p, idx) => `
+          <div style="border-radius:8px;background:#0e141d;border:1px solid rgba(56,189,248,0.28);padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div>
+              <div style="font-size:11.5px;font-weight:700;color:#f1f5f9;">${p.name}</div>
+              <div class="mono" style="font-size:9.5px;color:#38bdf8;">${p.protocolBadge} · ${p.locationLabel}</div>
+            </div>
+            <button type="button" class="copper-btn mono" data-preset-idx="${idx}" style="min-height:32px;padding:5px 10px;">ACTIVATE</button>
+          </div>
+        `
+        ).join("");
+
+        listEl.querySelectorAll("button[data-preset-idx]").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const p = PRESET_PROFILES[Number(btn.dataset.presetIdx)];
+            if (!p) return;
+            const cfg = buildPresetConfig(p);
+            saveServer(cfg, p.name, p.locationLabel, p.latitude, p.longitude, 3.6);
+            appendSentinelLog(`[PROFILE] Activated stabilized preset: ${p.name} (${p.protocolBadge})`);
+            showError("");
+            document.getElementById("public-server-modal").classList.add("hidden");
+          });
+        });
+      }
+
+      // Public Directory Fetcher matching NativePublicDirectory.kt
+      async function fetchPublicDirectory(countryCode) {
+        const path = countryCode ? `countries/${countryCode}.txt` : "top.txt";
+        const res = await fetch("https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/" + path);
+        if (!res.ok) throw new Error(`Directory returned HTTP ${res.status}.`);
+        const raw = await res.text();
+        const content = /^(vless|vmess|trojan|ss|socks5?):\/\//m.test(raw) ? raw : decodeBase64(raw.trim());
+        const nodes = [];
+        let skipped = 0;
+        const seen = new Set();
+        const hub = WORLD_HUB_NODES.find(h => h.code === countryCode);
+        const countryLabel = hub ? hub.countryName : countryCode || "Unknown location";
+
+        for (const line of content.split(/\r?\n/)) {
+          const t = line.trim();
+          if (!t || t.startsWith("#")) continue;
+          if (seen.has(t)) continue;
+          seen.add(t);
+          try {
+            const imp = parseXrayInput(t);
+            const proto = (imp.config.outbounds[0].protocol || "").toLowerCase();
+            if (!["vless", "vmess", "trojan", "shadowsocks", "socks"].includes(proto)) {
+              skipped++;
+              continue;
+            }
+            nodes.push({
+              id: "node-" + (nodes.length + 1),
+              name: `${proto.toUpperCase()} · ${nodes.length + 1}`,
+              protocol: proto,
+              country: countryLabel,
+              countryCode: countryCode || null,
+              configJson: JSON.stringify(imp.config)
+            });
+          } catch {
+            skipped++;
+          }
+        }
+        return { nodes, skipped };
+      }
+
+      function renderDirectoryNodes() {
+        const q = document.getElementById("directory-search-input").value.trim().toLowerCase();
+        const listEl = document.getElementById("directory-node-list");
+        const filtered = state.directoryNodes
+          .filter(n => !q || `${n.name} ${n.country} ${n.protocol}`.toLowerCase().includes(q))
+          .slice(0, 40);
+        listEl.innerHTML = filtered
+          .map(
+            (n, idx) => `
+          <div style="border-radius:8px;background:#131820;border:1px solid #313b4b;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div>
+              <div style="font-size:12px;font-weight:700;color:#f1f5f9;">${n.name}</div>
+              <div class="mono" style="font-size:9.5px;color:#94a3b8;">${n.protocol.toUpperCase()} · ${n.country}</div>
+            </div>
+            <button type="button" class="copper-btn mono" data-node-idx="${idx}" style="min-height:34px;padding:6px 10px;">IMPORT</button>
+          </div>
+        `
+          )
+          .join("");
+        listEl.querySelectorAll("button[data-node-idx]").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const node = filtered[Number(btn.dataset.nodeIdx)];
+            if (!node) return;
+            const hub = WORLD_HUB_NODES.find(h => h.code === node.countryCode);
+            saveServer(
+              node.configJson,
+              node.name,
+              node.countryCode ? `${node.country} · source-reported` : "",
+              hub ? hub.latitude : null,
+              hub ? hub.longitude : null,
+              3.2
+            );
+            appendSentinelLog(`[NODE] Switched to ${node.name} (${node.country})`);
+            showError("Free public server imported. It is untrusted and has not been tested.");
+            document.getElementById("public-server-modal").classList.add("hidden");
+          });
+        });
+      }
+
+      async function openPublicServerModal(initialCode = "") {
+        const modal = document.getElementById("public-server-modal");
+        const sel = document.getElementById("directory-country-select");
+        sel.value = initialCode;
+        renderPresetProfiles();
+        modal.classList.remove("hidden");
+        await loadDirectoryFeed(initialCode);
+      }
+
+      async function loadDirectoryFeed(code) {
+        const statusEl = document.getElementById("directory-status-text");
+        statusEl.textContent = "Loading public feed…";
+        try {
+          const res = await fetchPublicDirectory(code);
+          state.directoryNodes = res.nodes;
+          statusEl.textContent = `${res.nodes.length} supported · ${res.skipped} skipped`;
+          renderDirectoryNodes();
+        } catch (err) {
+          statusEl.textContent = err.message || "Public directory unavailable. Try another feed.";
+          state.directoryNodes = [];
+          renderDirectoryNodes();
+        }
+      }
+
+      // Distance & Local Server Recommender matching NativeLocalServerRecommender.kt
+      function distanceKm(lat1, lon1, lat2, lon2) {
+        const R = 6371.0;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      function approximateCoordinatesFromTimeZone() {
+        const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").toLowerCase();
+        if (tz.includes("singapore") || tz.includes("kuala_lumpur")) return [1.3521, 103.8198];
+        if (tz.includes("tokyo")) return [35.6762, 139.6503];
+        if (tz.includes("seoul")) return [37.5665, 126.9780];
+        if (tz.includes("hong_kong") || tz.includes("shanghai") || tz.includes("taipei")) return [22.3193, 114.1694];
+        if (tz.includes("kolkata") || tz.includes("calcutta") || tz.includes("mumbai")) return [19.0760, 72.8777];
+        if (tz.includes("dubai")) return [25.2048, 55.2708];
+        if (tz.includes("tehran")) return [35.6892, 51.3890];
+        if (tz.includes("istanbul")) return [41.0082, 28.9784];
+        if (tz.includes("london")) return [51.5072, -0.1276];
+        if (tz.includes("paris")) return [48.8566, 2.3522];
+        if (tz.includes("amsterdam")) return [52.3676, 4.9041];
+        if (tz.includes("berlin") || tz.includes("frankfurt") || tz.includes("europe")) return [50.1109, 8.6821];
+        if (tz.includes("sydney") || tz.includes("melbourne") || tz.includes("australia")) return [-33.8688, 151.2093];
+        if (tz.includes("toronto") || tz.includes("canada")) return [43.6532, -79.3832];
+        if (tz.includes("america") || tz.includes("new_york") || tz.includes("chicago") || tz.includes("los_angeles")) {
+          return [39.0438, -77.4874];
+        }
+        return [1.3521, 103.8198];
+      }
+
+      function applyResolvedUserLocation(lat, lon, sourceLabel) {
+        state.userLat = lat;
+        state.userLon = lon;
+        state.userLocationSource = sourceLabel;
+        state.userLocationBusy = false;
+        localStorage.setItem("user_latitude", String(lat));
+        localStorage.setItem("user_longitude", String(lon));
+        localStorage.setItem("user_location_source", sourceLabel);
+        appendSentinelLog(`[LOC] User location acquired (${sourceLabel}): ${lat.toFixed(4)}°, ${lon.toFixed(4)}°`);
+        updateDashboardUI();
+      }
+
+      function requestAutomaticUserLocation(autoTriggered = false) {
+        if (state.userLocationBusy) return;
+        state.userLocationBusy = true;
+        updateDashboardUI();
+
+        const applyApproximateFallback = reason => {
+          if (state.userLat !== null && state.userLon !== null) {
+            state.userLocationBusy = false;
+            if (!state.userLocationSource) state.userLocationSource = "Saved Location";
+            updateDashboardUI();
+            return;
+          }
+          const [approxLat, approxLon] = approximateCoordinatesFromTimeZone();
+          applyResolvedUserLocation(approxLat, approxLon, reason || "Approximate Region");
+        };
+
+        if (!navigator.geolocation) {
+          applyApproximateFallback("Approximate Region");
+          return;
+        }
+
+        // First request exact / high-accuracy location, then fallback to approximate coarse location
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const acc = pos.coords && typeof pos.coords.accuracy === "number" ? Math.round(pos.coords.accuracy) : null;
+            const label = acc !== null && acc <= 100 ? `Exact GPS (±${acc}m)` : "Approximate Network";
+            applyResolvedUserLocation(pos.coords.latitude, pos.coords.longitude, label);
+          },
+          () => {
+            navigator.geolocation.getCurrentPosition(
+              pos => {
+                applyResolvedUserLocation(pos.coords.latitude, pos.coords.longitude, "Approximate Network");
+              },
+              err => {
+                if (err && err.code === 1 && !autoTriggered) {
+                  showError("Location permission denied; using approximate region fallback.");
+                }
+                applyApproximateFallback("Approximate Region");
+              },
+              { enableHighAccuracy: false, timeout: 6000, maximumAge: 600000 }
+            );
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 120000 }
+        );
+      }
+
+      // Initialize UI controls & event listeners
+      function initApp() {
+        // Tabs
+        document.querySelectorAll(".nav-tab").forEach(btn => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            const tab = btn.dataset.tab;
+            document.getElementById("tab-connect").classList.toggle("hidden", tab !== "CONNECT");
+            document.getElementById("tab-config").classList.toggle("hidden", tab !== "CONFIG");
+            document.getElementById("tab-info").classList.toggle("hidden", tab !== "INFO");
+          });
+        });
+
+        // Ping gauge & Main Chassis
+        document.getElementById("ping-gauge").addEventListener("click", refreshPing);
+        document.getElementById("vpn-power-btn").addEventListener("click", () => {
+          if (state.vpnState === "connected" || state.vpnState === "connecting" || state.vpnState === "error") {
+            state.vpnState = "disconnected";
+            state.elapsedSeconds = 0;
+            state.downloadMbps = 0;
+            state.uploadMbps = 0;
+            appendSentinelLog("[VPN] Tunnel disconnected");
+            updateDashboardUI();
+            return;
+          }
+          const coreProto = getCoreProtocol(state.savedConfig);
+          if (coreProto && coreProto !== "freedom" && !state.enabledProtocols.has(coreProto)) {
+            showError("Enable this server protocol in Settings before connecting.");
+            return;
+          }
+          showError("");
+          state.vpnState = "connecting";
+          const protoBadge = getProtocol(state.savedConfig) || "VLESS-REALITY";
+          appendSentinelLog(`[VPN] Initializing stabilized ${protoBadge} tunnel + TCP keep-alive…`);
+          updateDashboardUI();
+          setTimeout(() => {
+            if (state.vpnState === "connecting") {
+              state.vpnState = "connected";
+              appendSentinelLog(`[VPN] Tunnel active (${protoBadge}) · Routing: ${state.route} · DNS: ${state.dns}`);
+              updateDashboardUI();
+            }
+          }, 550);
+        });
+
+        document.getElementById("error-banner").addEventListener("click", () => showError(""));
+        document.getElementById("server-card").addEventListener("click", () => openPublicServerModal(""));
+        document.getElementById("open-public-servers-btn").addEventListener("click", () => openPublicServerModal(""));
+
+        // Country dropdown options
+        const countrySel = document.getElementById("directory-country-select");
+        WORLD_HUB_NODES.forEach(h => {
+          const opt = document.createElement("option");
+          opt.value = h.code;
+          opt.textContent = `${h.countryName.toUpperCase()} (${h.code})`;
+          countrySel.appendChild(opt);
+        });
+        countrySel.addEventListener("change", () => loadDirectoryFeed(countrySel.value));
+        document.getElementById("directory-search-input").addEventListener("input", renderDirectoryNodes);
+        document.getElementById("directory-refresh-btn").addEventListener("click", () => loadDirectoryFeed(countrySel.value));
+        document.getElementById("close-server-modal").addEventListener("click", () => document.getElementById("public-server-modal").classList.add("hidden"));
+        document.getElementById("modal-cancel-btn").addEventListener("click", () => document.getElementById("public-server-modal").classList.add("hidden"));
+        document.getElementById("modal-import-btn").addEventListener("click", () => {
+          try {
+            const imp = parseXrayInput(document.getElementById("modal-import-textarea").value);
+            saveServer(JSON.stringify(imp.config), imp.name, "", null, null);
+            appendSentinelLog("[CFG] Imported local configuration");
+            document.getElementById("public-server-modal").classList.add("hidden");
+          } catch (e) {
+            showError(e.message);
+          }
+        });
+
+        // Sentinel & Tools Drawer
+        document.getElementById("sentinel-pause-btn").addEventListener("click", () => {
+          state.sentinelPaused = !state.sentinelPaused;
+          renderSentinelLogs();
+        });
+        document.getElementById("sentinel-clear-btn").addEventListener("click", () => {
+          state.sentinelLogs = [];
+          renderSentinelLogs();
+        });
+        document.getElementById("tools-drawer-toggle").addEventListener("click", () => {
+          const content = document.getElementById("tools-drawer-content");
+          const open = content.classList.toggle("hidden");
+          document.getElementById("tools-drawer-chevron").textContent = open ? "▾" : "▴";
+        });
+        document.getElementById("quick-import-btn").addEventListener("click", () => {
+          try {
+            const raw = document.getElementById("quick-import-input").value;
+            const imp = parseXrayInput(raw);
+            saveServer(JSON.stringify(imp.config), imp.name, "", null, null);
+            document.getElementById("quick-import-input").value = "";
+            appendSentinelLog("[CFG] Imported local configuration");
+            showError("Configuration saved on this device.");
+          } catch (e) {
+            showError(e.message);
+          }
+        });
+
+        // Activity profile buttons
+        const actRow = document.getElementById("activity-row");
+        function renderActivities() {
+          actRow.innerHTML = ACTIVITIES.map(
+            a => `<button type="button" class="keycap ${state.activity === a ? "selected" : ""}" data-act="${a}">${a}</button>`
+          ).join("");
+          actRow.querySelectorAll("button").forEach(b => {
+            b.addEventListener("click", () => {
+              state.activity = b.dataset.act;
+              renderActivities();
+            });
+          });
+        }
+        renderActivities();
+
+        // Local Match button
+        document.getElementById("local-match-btn").addEventListener("click", async () => {
+          const msgEl = document.getElementById("recommendation-msg");
+          msgEl.classList.remove("hidden");
+          if (state.userLat === null || state.userLon === null) {
+            requestAutomaticUserLocation(false);
+          }
+          if (state.userLat === null || state.userLon === null) {
+            msgEl.textContent = "Requesting device location permission to find a nearby server…";
+            return;
+          }
+          msgEl.textContent = "Checking public server metadata for nearby regions…";
+          appendSentinelLog(`[LOCAL] Checking nearby public server regions for ${state.activity}…`);
+          const nearest = [...WORLD_HUB_NODES]
+            .sort((a, b) => distanceKm(state.userLat, state.userLon, a.latitude, a.longitude) - distanceKm(state.userLat, state.userLon, b.latitude, b.longitude))
+            .slice(0, 3);
+          for (const hub of nearest) {
+            try {
+              const res = await fetchPublicDirectory(hub.code);
+              if (res.nodes.length > 0) {
+                const picked = res.nodes[0];
+                const dist = Math.round(distanceKm(state.userLat, state.userLon, hub.latitude, hub.longitude));
+                saveServer(picked.configJson, picked.name, `${picked.country} · source-reported`, hub.latitude, hub.longitude, 3.4);
+                msgEl.textContent = `${state.activity}: selected a server reported in ${picked.country}; its approximate region hub (${hub.cityLabel}) is about ${dist} km away. Imported locally; tap Main Chassis to connect.`;
+                appendSentinelLog(`[LOCAL] Selected ${picked.name} (${picked.country})`);
+                return;
+              }
+            } catch {}
+          }
+          // Deterministic fallback to nearest stabilized preset if public directory is unreachable
+          const nearestPreset = [...PRESET_PROFILES].sort(
+            (a, b) => distanceKm(state.userLat, state.userLon, a.latitude, a.longitude) - distanceKm(state.userLat, state.userLon, b.latitude, b.longitude)
+          )[0];
+          if (nearestPreset) {
+            const dist = Math.round(distanceKm(state.userLat, state.userLon, nearestPreset.latitude, nearestPreset.longitude));
+            saveServer(buildPresetConfig(nearestPreset), nearestPreset.name, nearestPreset.locationLabel, nearestPreset.latitude, nearestPreset.longitude, 3.6);
+            msgEl.textContent = `${state.activity}: selected nearest stabilized profile ${nearestPreset.name} (${dist} km away).`;
+            appendSentinelLog(`[LOCAL] Selected stabilized fallback ${nearestPreset.name}`);
+            return;
+          }
+          msgEl.textContent = "No public servers were found in nearby regions.";
+        });
+
+        // Map buttons and Zoom presets
+        document.getElementById("map-world-btn").addEventListener("click", () => {
+          state.mapZoom = 1.0;
+          state.mapCenterX = 0.5;
+          state.mapCenterY = 0.48;
+          updateReticleReadout();
+        });
+        document.getElementById("map-recenter-btn").addEventListener("click", () => {
+          if (state.serverLat !== null && state.serverLon !== null) {
+            const [nx, ny] = projectNormalized(state.serverLat, state.serverLon);
+            state.mapCenterX = nx;
+            state.mapCenterY = ny;
+            state.mapZoom = Math.max(state.mapZoom, 3.6);
+            updateReticleReadout();
+          }
+        });
+        document.getElementById("map-zoom-in-btn").addEventListener("click", () => {
+          state.mapZoom = Math.min(18.0, state.mapZoom * 1.55);
+          state.mapCenterX = clampPan(state.mapCenterX, state.mapZoom);
+          state.mapCenterY = clampPan(state.mapCenterY, state.mapZoom);
+          updateReticleReadout();
+        });
+        document.getElementById("map-zoom-out-btn").addEventListener("click", () => {
+          state.mapZoom = Math.max(1.0, state.mapZoom / 1.55);
+          state.mapCenterX = clampPan(state.mapCenterX, state.mapZoom);
+          state.mapCenterY = clampPan(state.mapCenterY, state.mapZoom);
+          updateReticleReadout();
+        });
+
+        document.querySelectorAll("#inline-zoom-presets button").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const z = parseFloat(btn.dataset.zoom || "1");
+            if (z <= 1.05) {
+              state.mapZoom = 1.0;
+              state.mapCenterX = 0.5;
+              state.mapCenterY = 0.48;
+            } else {
+              state.mapZoom = z;
+              if (state.serverLat !== null && state.serverLon !== null) {
+                const [nx, ny] = projectNormalized(state.serverLat, state.serverLon);
+                state.mapCenterX = clampPan(nx, z);
+                state.mapCenterY = clampPan(ny, z);
+              } else {
+                state.mapCenterX = clampPan(state.mapCenterX, z);
+                state.mapCenterY = clampPan(state.mapCenterY, z);
+              }
+            }
+            updateReticleReadout();
+          });
+        });
+
+        document.querySelectorAll("#full-zoom-presets button").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const z = parseFloat(btn.dataset.fullZoom || btn.dataset.zoom || "1");
+            if (z <= 1.05) {
+              state.fullZoom = 1.0;
+              state.fullCenterX = 0.5;
+              state.fullCenterY = 0.48;
+            } else {
+              state.fullZoom = z;
+              state.fullCenterX = clampPan(state.fullCenterX, z);
+              state.fullCenterY = clampPan(state.fullCenterY, z);
+            }
+            updateFullMapBar();
+            updateReticleReadout();
+          });
+        });
+
+        document.getElementById("full-map-world-btn").addEventListener("click", () => {
+          state.fullZoom = 1.0;
+          state.fullCenterX = 0.5;
+          state.fullCenterY = 0.48;
+          updateFullMapBar();
+          updateReticleReadout();
+        });
+        document.getElementById("full-map-zoom-in-btn").addEventListener("click", () => {
+          state.fullZoom = Math.min(18.0, state.fullZoom * 1.55);
+          state.fullCenterX = clampPan(state.fullCenterX, state.fullZoom);
+          state.fullCenterY = clampPan(state.fullCenterY, state.fullZoom);
+          updateFullMapBar();
+          updateReticleReadout();
+        });
+        document.getElementById("full-map-zoom-out-btn").addEventListener("click", () => {
+          state.fullZoom = Math.max(1.0, state.fullZoom / 1.55);
+          state.fullCenterX = clampPan(state.fullCenterX, state.fullZoom);
+          state.fullCenterY = clampPan(state.fullCenterY, state.fullZoom);
+          updateFullMapBar();
+          updateReticleReadout();
+        });
+
+        document.getElementById("hub-popup-btn").addEventListener("click", () => {
+          if (state.selectedHub) {
+            const code = state.selectedHub.code;
+            state.selectedHub = null;
+            updateHubPopup();
+            openPublicServerModal(code);
+          }
+        });
+
+        const openFullMap = () => {
+          state.fullPickedHub = null;
+          state.fullPickedLat = state.serverLat;
+          state.fullPickedLon = state.serverLon;
+          if (state.fullPickedLat !== null && state.fullPickedLon !== null) {
+            const [nx, ny] = projectNormalized(state.fullPickedLat, state.fullPickedLon);
+            state.fullCenterX = nx;
+            state.fullCenterY = ny;
+            state.fullZoom = Math.max(2.6, state.mapZoom);
+          }
+          updateFullMapBar();
+          updateReticleReadout();
+          document.getElementById("full-map-modal").classList.remove("hidden");
+        };
+        document.getElementById("map-full-btn").addEventListener("click", openFullMap);
+        document.getElementById("map-expand-hud").addEventListener("click", openFullMap);
+        document.getElementById("user-loc-pin-btn").addEventListener("click", () => requestAutomaticUserLocation(false));
+        document.getElementById("close-full-map-btn").addEventListener("click", () => document.getElementById("full-map-modal").classList.add("hidden"));
+        document.getElementById("full-map-browse-btn").addEventListener("click", () => {
+          if (state.fullPickedHub) {
+            document.getElementById("full-map-modal").classList.add("hidden");
+            openPublicServerModal(state.fullPickedHub.code);
+          }
+        });
+
+        // Config tab controls
+        const renderConfigControls = () => {
+          document.getElementById("dns-detail-label").textContent = "Active upstream DNS: " + state.dns;
+          const dnsRow = document.getElementById("dns-keycaps");
+          dnsRow.innerHTML = DNS_LIST.map(
+            d => `<button type="button" class="keycap mono ${state.dns === d ? "selected" : ""}" data-dns="${d}">${d}</button>`
+          ).join("");
+          dnsRow.querySelectorAll("button").forEach(b => {
+            b.addEventListener("click", () => {
+              state.dns = b.dataset.dns;
+              renderConfigControls();
+            });
+          });
+
+          const protoRow = document.getElementById("protocol-toggles");
+          protoRow.innerHTML = PROTO_LIST.map(
+            p => `<button type="button" class="keycap mono ${state.enabledProtocols.has(p.id) ? "selected" : ""}" data-proto="${p.id}">${p.label}</button>`
+          ).join("");
+          protoRow.querySelectorAll("button").forEach(b => {
+            b.addEventListener("click", () => {
+              const id = b.dataset.proto;
+              if (state.enabledProtocols.has(id)) state.enabledProtocols.delete(id);
+              else state.enabledProtocols.add(id);
+              renderConfigControls();
+            });
+          });
+
+          const routeRow = document.getElementById("route-keycaps");
+          routeRow.innerHTML = ROUTE_LIST.map(
+            r => `<button type="button" class="keycap ${state.route === r ? "selected" : ""}" data-route="${r}">${r}</button>`
+          ).join("");
+          routeRow.querySelectorAll("button").forEach(b => {
+            b.addEventListener("click", () => {
+              state.route = b.dataset.route;
+              renderConfigControls();
+            });
+          });
+        };
+        renderConfigControls();
+
+        document.getElementById("export-json-btn").addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(state.savedConfig);
+            showError("Xray configuration copied to clipboard.");
+          } catch {
+            showError("Unable to copy to clipboard in this context.");
+          }
+        });
+
+        attachMapInteractions(document.getElementById("map-viewport"), false);
+        attachMapInteractions(document.getElementById("full-map-viewport"), true);
+
+        // Load world vector map JSON
+        fetch("/data/world_countries.json")
+          .then(r => r.json())
+          .then(arr => {
+            state.countries = arr.map(obj => ({
+              c: obj.c || "",
+              n: obj.n || "",
+              rings: (obj.p || []).map(pts => {
+                const coords = new Float32Array(pts.length * 2);
+                for (let k = 0; k < pts.length; k++) {
+                  const [nx, ny] = projectNormalized(pts[k][1], pts[k][0]);
+                  coords[k * 2] = nx;
+                  coords[k * 2 + 1] = ny;
+                }
+                return coords;
+              })
+            }));
+          })
+          .catch(() => {});
+
+        // Animation loop for map canvas
+        const animate = time => {
+          const activeCode = inferCountryCode(state.serverLocation, state.serverLat, state.serverLon);
+          drawMapCanvas(
+            document.getElementById("world-map-canvas"),
+            state.mapZoom,
+            state.mapCenterX,
+            state.mapCenterY,
+            state.serverLat,
+            state.serverLon,
+            activeCode,
+            state.selectedHub ? state.selectedHub.code : null,
+            state.userLat,
+            state.userLon,
+            false,
+            time
+          );
+          if (!document.getElementById("full-map-modal").classList.contains("hidden")) {
+            const effLat = state.fullPickedHub ? state.fullPickedHub.latitude : state.serverLat;
+            const effLon = state.fullPickedHub ? state.fullPickedHub.longitude : state.serverLon;
+            drawMapCanvas(
+              document.getElementById("full-map-canvas"),
+              state.fullZoom,
+              state.fullCenterX,
+              state.fullCenterY,
+              effLat,
+              effLon,
+              state.fullPickedHub ? state.fullPickedHub.code : activeCode,
+              state.fullPickedHub ? state.fullPickedHub.code : null,
+              state.userLat,
+              state.userLon,
+              false,
+              time
+            );
+          }
+          requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+
+        // 3-Day (72-Hour) Free Trial & 1-Key-Per-1-Account License Enforcement
+        const TRIAL_DURATION_MS = 3 * 24 * 60 * 60 * 1000;
+
+        const getTrialStartMs = () => {
+          let stored = parseInt(localStorage.getItem("netcon_trial_start_ms") || "0", 10);
+          if (!stored || isNaN(stored)) {
+            stored = Date.now();
+            localStorage.setItem("netcon_trial_start_ms", String(stored));
+          }
+          return stored;
+        };
+
+        const isValidNetconKey = raw => {
+          const norm = String(raw || "").trim().toUpperCase().replace(/\s+/g, "-");
+          const parts = norm.split("-");
+          if (parts.length !== 5 || parts[0] !== "NETCON") return false;
+          return parts.slice(1).every(p => /^[A-Z0-9]{4}$/.test(p));
+        };
+
+        const evaluateLicenseState = () => {
+          const activatedKey = (localStorage.getItem("netcon_activated_license") || "").trim();
+          const activatedAcct = (localStorage.getItem("netcon_activated_account") || "").trim();
+          const simExpired = localStorage.getItem("netcon_simulate_expired") === "true";
+          const startMs = getTrialStartMs();
+          const remainingMs = simExpired ? 0 : Math.max(0, startMs + TRIAL_DURATION_MS - Date.now());
+          if (activatedKey && activatedAcct && isValidNetconKey(activatedKey)) {
+            const p = activatedKey.split("-");
+            return {
+              state: "LICENSED",
+              isAccessAllowed: true,
+              isFrozen: false,
+              remainingMs: 0,
+              countdown: "FULL LICENSE",
+              maskedKey: `${p[0]}-${p[1]}-••••-${p[3]}-${p[4]}`,
+              account: activatedAcct
+            };
+          }
+          if (remainingMs > 0) {
+            const totalMin = Math.ceil(remainingMs / 60000);
+            const d = Math.floor(totalMin / 1440);
+            const h = Math.floor((totalMin % 1440) / 60);
+            const m = totalMin % 60;
+            const countdown = `${d}D ${String(h).padStart(2, "0")}H ${String(m).padStart(2, "0")}M`;
+            return {
+              state: "TRIAL_ACTIVE",
+              isAccessAllowed: true,
+              isFrozen: false,
+              remainingMs,
+              countdown,
+              maskedKey: "",
+              account: ""
+            };
+          }
+          return {
+            state: "TRIAL_EXPIRED_FROZEN",
+            isAccessAllowed: false,
+            isFrozen: true,
+            remainingMs: 0,
+            countdown: "0D 00H 00M",
+            maskedKey: "",
+            account: ""
+          };
+        };
+
+        const updateLicenseUI = () => {
+          const lic = evaluateLicenseState();
+          const bar = document.getElementById("trial-license-bar");
+          const dot = document.getElementById("trial-bar-dot");
+          const text = document.getElementById("trial-bar-text");
+          const badge = document.getElementById("trial-bar-badge");
+          const overlay = document.getElementById("frozen-lock-overlay");
+
+          if (lic.state === "LICENSED") {
+            bar.style.borderColor = "rgba(16, 185, 129, 0.6)";
+            dot.style.background = "#10b981";
+            text.textContent = `LICENSED (${lic.account}) · ${lic.maskedKey}`;
+            text.style.color = "#f1f5f9";
+            badge.textContent = "LICENSED";
+            badge.style.color = "#4ade80";
+            badge.style.borderColor = "rgba(16, 185, 129, 0.6)";
+            badge.style.background = "#102a22";
+            overlay.classList.add("hidden");
+          } else if (lic.isFrozen) {
+            bar.style.borderColor = "rgba(239, 68, 68, 0.75)";
+            dot.style.background = "#ef4444";
+            text.textContent = "TRIAL EXPIRED · APK FROZEN";
+            text.style.color = "#fca5a5";
+            badge.textContent = "ACTIVATE KEY";
+            badge.style.color = "#f5a623";
+            overlay.classList.remove("hidden");
+            if (state.vpnState === "connected" || state.vpnState === "connecting") {
+              state.vpnState = "error";
+              state.elapsedSeconds = 0;
+              state.downloadMbps = 0;
+              state.uploadMbps = 0;
+              showError("3-day free trial expired. Connection terminated; activate a license key.");
+              appendSentinelLog("[LICENSE] 3-day trial expired · VPN connection refused");
+              updateDashboardUI();
+            }
+          } else {
+            bar.style.borderColor = "rgba(245, 166, 35, 0.55)";
+            dot.style.background = "#f5a623";
+            text.textContent = `FREE TRIAL · ${lic.countdown} LEFT`;
+            text.style.color = "#f1f5f9";
+            badge.textContent = "ACTIVATE KEY";
+            badge.style.color = "#f5a623";
+            overlay.classList.add("hidden");
+          }
+
+          document.getElementById("info-license-state").textContent = lic.state;
+          document.getElementById("info-trial-countdown").textContent = lic.countdown;
+          const accessEl = document.getElementById("info-server-access");
+          accessEl.textContent = lic.isAccessAllowed ? "ALLOWED" : "FROZEN · REFUSED";
+          accessEl.style.color = lic.isAccessAllowed ? "#22ff88" : "#f87171";
+          const boundEl = document.getElementById("info-bound-account");
+          if (boundEl) {
+            boundEl.textContent = lic.account ? lic.account : "1 Key = 1 Account";
+          }
+          return lic;
+        };
+
+        const issueKeyForEmail = async accountEmail => {
+          const acct = String(accountEmail || "arxdevmm@gmail.com").trim().toLowerCase();
+          const res = await fetch(`/api/license/issue?account=${encodeURIComponent(acct)}`);
+          return await res.json();
+        };
+
+        const handleActivateKey = async (accountEmail, rawKey) => {
+          const acct = String(accountEmail || "").trim().toLowerCase();
+          const norm = String(rawKey || "").trim().toUpperCase().replace(/\s+/g, "-");
+          try {
+            const res = await fetch(`/api/license/activate?account=${encodeURIComponent(acct)}&key=${encodeURIComponent(norm)}`);
+            const data = await res.json();
+            if (!data.valid) {
+              return { ok: false, msg: data.reason || "Invalid key for this account." };
+            }
+            localStorage.setItem("netcon_activated_license", data.key);
+            localStorage.setItem("netcon_activated_account", data.account);
+            localStorage.setItem("netcon_simulate_expired", "false");
+            const updated = updateLicenseUI();
+            appendSentinelLog(`[LICENSE] Activated ${updated.maskedKey} for ${updated.account}`);
+            showError("");
+            return { ok: true, msg: `Activated and locked to ${updated.account} (${updated.maskedKey}).` };
+          } catch {
+            return { ok: false, msg: "Unable to verify license key." };
+          }
+        };
+
+        document.getElementById("trial-license-bar").addEventListener("click", () => {
+          document.getElementById("license-modal").classList.remove("hidden");
+        });
+        document.getElementById("info-open-license-btn").addEventListener("click", () => {
+          document.getElementById("license-modal").classList.remove("hidden");
+        });
+        document.getElementById("close-license-modal").addEventListener("click", () => {
+          document.getElementById("license-modal").classList.add("hidden");
+        });
+        document.getElementById("license-demo-key-btn").addEventListener("click", async () => {
+          const acctInput = document.getElementById("license-account-input");
+          const acct = (acctInput.value || "arxdevmm@gmail.com").trim();
+          acctInput.value = acct;
+          const issued = await issueKeyForEmail(acct);
+          document.getElementById("license-modal-input").value = issued.key;
+          const fb = document.getElementById("license-modal-feedback");
+          fb.classList.remove("hidden");
+          fb.style.color = "#4ade80";
+          fb.textContent = `Issued 1-account key locked to ${issued.account}. Tap ACTIVATE KEY.`;
+        });
+        document.getElementById("license-activate-btn").addEventListener("click", async () => {
+          const acct = document.getElementById("license-account-input").value;
+          const key = document.getElementById("license-modal-input").value;
+          const res = await handleActivateKey(acct, key);
+          const fb = document.getElementById("license-modal-feedback");
+          fb.classList.remove("hidden");
+          fb.style.color = res.ok ? "#4ade80" : "#fca5a5";
+          fb.textContent = res.msg;
+          if (res.ok) {
+            setTimeout(() => document.getElementById("license-modal").classList.add("hidden"), 450);
+          }
+        });
+        const triggerSimulateExpired = () => {
+          localStorage.removeItem("netcon_activated_license");
+          localStorage.removeItem("netcon_activated_account");
+          localStorage.setItem("netcon_simulate_expired", "true");
+          document.getElementById("license-modal").classList.add("hidden");
+          updateLicenseUI();
+        };
+        const triggerResetTrial = () => {
+          localStorage.removeItem("netcon_activated_license");
+          localStorage.removeItem("netcon_activated_account");
+          localStorage.setItem("netcon_simulate_expired", "false");
+          localStorage.setItem("netcon_trial_start_ms", String(Date.now()));
+          updateLicenseUI();
+        };
+        document.getElementById("license-test-freeze-btn").addEventListener("click", triggerSimulateExpired);
+        document.getElementById("info-simulate-expired-btn").addEventListener("click", triggerSimulateExpired);
+        document.getElementById("license-reset-trial-btn").addEventListener("click", triggerResetTrial);
+        document.getElementById("info-reset-trial-btn").addEventListener("click", triggerResetTrial);
+        document.getElementById("frozen-reset-trial-btn").addEventListener("click", triggerResetTrial);
+        document.getElementById("frozen-fill-key-btn").addEventListener("click", async () => {
+          const acctInput = document.getElementById("frozen-account-input");
+          const acct = (acctInput.value || "arxdevmm@gmail.com").trim();
+          acctInput.value = acct;
+          const issued = await issueKeyForEmail(acct);
+          document.getElementById("frozen-license-input").value = issued.key;
+          const msg = document.getElementById("frozen-lock-msg");
+          msg.style.color = "#4ade80";
+          msg.textContent = `Loaded key ${issued.key} bound exclusively to ${issued.account}.`;
+        });
+        document.getElementById("frozen-activate-btn").addEventListener("click", async () => {
+          const acct = document.getElementById("frozen-account-input").value;
+          const key = document.getElementById("frozen-license-input").value;
+          const res = await handleActivateKey(acct, key);
+          const msg = document.getElementById("frozen-lock-msg");
+          msg.style.color = res.ok ? "#4ade80" : "#fca5a5";
+          msg.textContent = res.msg;
+        });
+
+        // 1s telemetry & trial ticker
+        setInterval(() => {
+          const lic = updateLicenseUI();
+          if (state.vpnState === "connected" && lic.isAccessAllowed) {
+            const down = 240000 + Math.floor(Math.random() * 520000);
+            const up = 55000 + Math.floor(Math.random() * 140000);
+            state.elapsedSeconds += 1;
+            state.receivedBytes += down;
+            state.sentBytes += up;
+            state.downloadMbps = (down * 8) / 1000000;
+            state.uploadMbps = (up * 8) / 1000000;
+            updateDashboardUI();
+          }
+        }, 1000);
+
+        updateLicenseUI();
+        renderSentinelLogs();
+        updateDashboardUI();
+        updateReticleReadout();
+        refreshPing();
+        requestAutomaticUserLocation(true);
+      }
+
+      initApp();
+    </script>
+  </body>
+</html>

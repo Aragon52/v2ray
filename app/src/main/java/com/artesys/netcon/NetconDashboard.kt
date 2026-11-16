@@ -1,8 +1,14 @@
 package com.artesys.netcon
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -71,6 +77,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -131,8 +139,26 @@ internal fun NetconDashboard(
     serverLongitude: Double?,
     userLatitude: Double?,
     userLongitude: Double?,
-    onSaveLocation: (String, Double, Double) -> Unit,
-    onSaveUserLocation: (Double, Double) -> Unit,
+    userLocationSource: String,
+    userLocationBusy: Boolean,
+    onRequestUserLocation: () -> Unit,
+    licenseStatus: NetconLicenseManager.LicenseStatus = NetconLicenseManager.LicenseStatus(
+        state = NetconLicenseManager.State.TRIAL_ACTIVE,
+        trialStartEpochMs = 0L,
+        trialExpiresEpochMs = NetconLicenseManager.TRIAL_DURATION_MS,
+        remainingTrialMs = NetconLicenseManager.TRIAL_DURATION_MS,
+        activatedKeyMasked = "",
+    ),
+    onRefreshLicenseStatus: () -> Unit = {},
+    onActivateLicenseKey: (String, String) -> NetconLicenseManager.ActivationResult = { _, _ ->
+        NetconLicenseManager.ActivationResult(
+            success = false,
+            message = "License activation unavailable in preview.",
+            status = licenseStatus,
+        )
+    },
+    onSimulateTrialExpired: (Boolean) -> Unit = {},
+    onResetTrialWindow: () -> Unit = {},
     feedback: String,
     onFeedbackDismiss: () -> Unit,
     onImport: (String) -> Boolean,
@@ -146,17 +172,19 @@ internal fun NetconDashboard(
     onOpenVpnSettings: () -> Unit,
     onExport: () -> Unit,
     onMeasurePing: suspend () -> Int?,
+    onSelectPresetProfile: (NativeXrayConfig.ServerProfilePreset) -> Unit = {},
 ) {
     val vpnStatus by produceState(initialValue = NetconVpnService.getStatus()) {
         while (true) {
+            onRefreshLicenseStatus()
             value = NetconVpnService.getStatus()
             delay(1000)
         }
     }
     var tab by rememberSaveable { mutableStateOf(DashboardTab.Connection) }
     var serverDialog by rememberSaveable { mutableStateOf(false) }
+    var licenseDialog by rememberSaveable { mutableStateOf(false) }
     var serverDialogCountry by rememberSaveable { mutableStateOf("") }
-    var locationDialog by rememberSaveable { mutableStateOf(false) }
     var importText by rememberSaveable { mutableStateOf("") }
     var savedActivity by rememberSaveable {
         mutableStateOf(NativeLocalServerRecommender.activities.first())
@@ -168,7 +196,7 @@ internal fun NetconDashboard(
     var dns by rememberSaveable { mutableStateOf("1.1.1.1") }
     var route by rememberSaveable { mutableStateOf("Bypass LAN") }
     var enabledProtocols by rememberSaveable {
-        mutableStateOf(setOf("vless", "vmess", "trojan", "shadowsocks", "freedom"))
+        mutableStateOf(setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "freedom"))
     }
     var pingMs by remember { mutableStateOf<Int?>(null) }
     var pingBusy by remember { mutableStateOf(false) }
@@ -234,7 +262,9 @@ internal fun NetconDashboard(
         val originLatitude = userLatitude
         val originLongitude = userLongitude
         if (originLatitude == null || originLongitude == null) {
-            recommendationMessage = "Pin your location on the map before finding a nearby server."
+            onRequestUserLocation()
+            recommendationMessage = "Requesting device location permission to match nearby servers automatically…"
+            appendSentinelLog("[LOCAL] Requesting automatic GPS/Network location…")
             return
         }
         val selectedActivity = activity
@@ -344,7 +374,15 @@ internal fun NetconDashboard(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                DashboardLogoCard()
+                DashboardLogoCard(
+                    state = vpnStatus.state,
+                    protocol = protocol,
+                )
+
+                TrialLicenseStatusBar(
+                    licenseStatus = licenseStatus,
+                    onOpenLicenseDialog = { licenseDialog = true },
+                )
 
                 // Three top navigation pills matching Design #2
                 DesignTwoNavigation(
@@ -381,14 +419,18 @@ internal fun NetconDashboard(
                         sentinelLogs = sentinelLogs,
                         onClearSentinelLogs = { sentinelLogs.clear() },
                         onOpenServers = { countryCode ->
-                            serverDialogCountry = countryCode
-                            serverDialog = true
+                            if (!licenseStatus.isAccessAllowed) {
+                                licenseDialog = true
+                            } else {
+                                serverDialogCountry = countryCode
+                                serverDialog = true
+                            }
                         },
-                        onSetLocation = { locationDialog = true },
-                        onSaveLocation = onSaveLocation,
                         userLatitude = userLatitude,
                         userLongitude = userLongitude,
-                        onSaveUserLocation = onSaveUserLocation,
+                        userLocationSource = userLocationSource,
+                        userLocationBusy = userLocationBusy,
+                        onRequestUserLocation = onRequestUserLocation,
                         onImport = { raw ->
                             if (onImport(raw)) {
                                 appendSentinelLog("[CFG] Imported local configuration")
@@ -400,10 +442,24 @@ internal fun NetconDashboard(
                             val normalized = protocol.lowercase(Locale.ROOT)
                             normalized == "freedom" || enabledProtocols.contains(normalized)
                         },
-                        onConnect = onConnect,
+                        onConnect = {
+                            if (!licenseStatus.isAccessAllowed) {
+                                onDisconnect()
+                                licenseDialog = true
+                            } else {
+                                onConnect()
+                            }
+                        },
                         onDisconnect = onDisconnect,
                         onBlockedProtocol = onBlockedProtocol,
-                        onStartConfigured = { onStartConfigured(dns, route) },
+                        onStartConfigured = {
+                            if (!licenseStatus.isAccessAllowed) {
+                                onDisconnect()
+                                licenseDialog = true
+                            } else {
+                                onStartConfigured(dns, route)
+                            }
+                        },
                         onDismissError = onFeedbackDismiss,
                     )
 
@@ -422,6 +478,10 @@ internal fun NetconDashboard(
                         serverName = serverName,
                         protocol = protocol,
                         state = vpnStatus.state,
+                        licenseStatus = licenseStatus,
+                        onOpenLicenseDialog = { licenseDialog = true },
+                        onSimulateTrialExpired = onSimulateTrialExpired,
+                        onResetTrialWindow = onResetTrialWindow,
                         onOpenVpnSettings = onOpenVpnSettings,
                     )
                 }
@@ -433,14 +493,14 @@ internal fun NetconDashboard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "COPPER COMPASS ENGINE",
+                        "NETCON SECURITY ARCHITECTURE",
                         color = DarkInkMuted,
                         fontFamily = JetBrainsMonoFont,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "XRAY CORE V1.8.16",
+                        "XRAY CORE · ZERO-LOG",
                         color = DarkInkMuted,
                         fontFamily = JetBrainsMonoFont,
                         fontSize = 8.sp,
@@ -449,16 +509,57 @@ internal fun NetconDashboard(
                 }
             }
         }
+
+        // Full-screen non-dismissible lock overlay when the 3-day free trial is expired
+        if (licenseStatus.isFrozen) {
+            FrozenTrialLockOverlay(
+                licenseStatus = licenseStatus,
+                onActivateLicenseKey = { accountId, raw ->
+                    val res = onActivateLicenseKey(accountId, raw)
+                    if (res.success) {
+                        appendSentinelLog("[LICENSE] Activated ${res.status.activatedKeyMasked} for ${res.status.activatedAccount}")
+                    }
+                    res
+                },
+                onResetTrialWindow = onResetTrialWindow,
+            )
+        }
     }
 
-    if (serverDialog) {
+    if (licenseDialog && !licenseStatus.isFrozen) {
+        LicenseActivationDialog(
+            licenseStatus = licenseStatus,
+            onDismiss = { licenseDialog = false },
+            onActivateLicenseKey = { accountId, raw ->
+                val res = onActivateLicenseKey(accountId, raw)
+                if (res.success) {
+                    appendSentinelLog("[LICENSE] Activated ${res.status.activatedKeyMasked} for ${res.status.activatedAccount}")
+                    licenseDialog = false
+                }
+                res
+            },
+            onSimulateTrialExpired = {
+                licenseDialog = false
+                onSimulateTrialExpired(true)
+            },
+            onResetTrialWindow = onResetTrialWindow,
+        )
+    }
+
+    if (serverDialog && licenseStatus.isAccessAllowed) {
         PublicServerDialog(
             initialCountryCode = serverDialogCountry,
+            activeServerName = serverName,
             onDismiss = { serverDialog = false },
             fetchNodes = onFetchPublicNodes,
             onSelectNode = { node ->
                 onSelectPublicNode(node)
                 appendSentinelLog("[NODE] Switched to ${node.name} (${node.country})")
+                serverDialog = false
+            },
+            onSelectPreset = { preset ->
+                onSelectPresetProfile(preset)
+                appendSentinelLog("[PROFILE] Activated ${preset.name} (${preset.protocol})")
                 serverDialog = false
             },
             onImport = { raw ->
@@ -469,33 +570,121 @@ internal fun NetconDashboard(
             },
         )
     }
-
-    if (locationDialog) {
-        LocationDialog(
-            initialName = serverLocation,
-            initialLatitude = serverLatitude,
-            initialLongitude = serverLongitude,
-            onDismiss = { locationDialog = false },
-            onSave = { name, latitude, longitude ->
-                onSaveLocation(name, latitude, longitude)
-                appendSentinelLog("[MAP] Location pinned: $name")
-                locationDialog = false
-            },
-        )
-    }
 }
 
 @Composable
-private fun DashboardLogoCard() {
-    Image(
-        painter = painterResource(R.drawable.dashboard_logo_card),
-        contentDescription = "AI V2Ray Client logo card",
-        contentScale = ContentScale.FillBounds,
+private fun DashboardLogoCard(
+    state: String = "disconnected",
+    protocol: String = "",
+) {
+    val connected = state == "connected"
+    val connecting = state == "connecting"
+    val accentDot = when {
+        connected -> EmeraldOnline
+        connecting -> GoldText
+        else -> GoldAccent
+    }
+    val protoLabel = when (protocol.uppercase(Locale.ROOT)) {
+        "", "FREEDOM" -> "VLESS · REALITY"
+        else -> protocol.uppercase(Locale.ROOT)
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(390f / 118f)
-            .clip(RoundedCornerShape(12.dp)),
-    )
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFFF1F5F8), Color(0xFFD6DEE6), Color(0xFFB7C2CE)),
+                ),
+            )
+            .border(1.5.dp, SilverBorderLight, RoundedCornerShape(14.dp))
+            .padding(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF0A1018), Color(0xFF131E2E), Color(0xFF0B121C)),
+                    ),
+                )
+                .border(1.dp, Color(0xFF2E3E54), RoundedCornerShape(10.dp))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            // Subtle copper & cyan ambient glow behind the logo mark
+            Canvas(modifier = Modifier.matchParentSize()) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0x38D9822B), Color.Transparent),
+                        center = Offset(size.width * 0.25f, size.height * 0.5f),
+                        radius = size.minDimension * 0.85f,
+                    ),
+                    center = Offset(size.width * 0.25f, size.height * 0.5f),
+                    radius = size.minDimension * 0.85f,
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0x2238BDF8), Color.Transparent),
+                        center = Offset(size.width * 0.82f, size.height * 0.35f),
+                        radius = size.minDimension * 0.7f,
+                    ),
+                    center = Offset(size.width * 0.82f, size.height * 0.35f),
+                    radius = size.minDimension * 0.7f,
+                )
+            }
+
+            ScrewHead(Modifier.align(Alignment.TopStart), angle = 22f)
+            ScrewHead(Modifier.align(Alignment.TopEnd), angle = -28f)
+            ScrewHead(Modifier.align(Alignment.BottomStart), angle = -18f)
+            ScrewHead(Modifier.align(Alignment.BottomEnd), angle = 34f)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.netcon_logo),
+                    contentDescription = "Netcon logo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .height(42.dp)
+                        .fillMaxWidth(0.76f),
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(accentDot, CircleShape),
+                    )
+                    Text(
+                        "PRECISION MULTI-PROTOCOL TUNNEL",
+                        color = Color(0xFFE2E8F0),
+                        fontFamily = JetBrainsMonoFont,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.9.sp,
+                    )
+                }
+
+                Text(
+                    "$protoLabel  ·  XRAY CORE  ·  ZERO-LOG",
+                    color = Color(0xFF94A3B8),
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 8.sp,
+                    letterSpacing = 0.5.sp,
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -606,11 +795,11 @@ private fun ConnectionScreen(
     onProtocolAllowed: () -> Boolean,
     onStartConfigured: () -> Unit,
     onOpenServers: (String) -> Unit,
-    onSetLocation: () -> Unit,
-    onSaveLocation: (String, Double, Double) -> Unit,
     userLatitude: Double?,
     userLongitude: Double?,
-    onSaveUserLocation: (Double, Double) -> Unit,
+    userLocationSource: String,
+    userLocationBusy: Boolean,
+    onRequestUserLocation: () -> Unit,
     onImport: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -623,18 +812,25 @@ private fun ConnectionScreen(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 1. Dashboard Metrics Card matching Design #2 (3 Gauges + RX RECV / TX SENT OLED cards)
+        // 1. F-16 / F-22 Raptor Avionics MFD Telemetry Cluster (Connection Status, Latency, TX Speed)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(
-                    Brush.verticalGradient(listOf(SilverTop, SilverMid, SilverBottom)),
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xFF141C27),
+                            Color(0xFF0B1119),
+                            Color(0xFF070B10),
+                        ),
+                    ),
                 )
-                .border(1.5.dp, SilverBorderLight, RoundedCornerShape(14.dp))
+                .border(1.5.dp, Color(0xFF334459), RoundedCornerShape(14.dp))
                 .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            val isPulsingStatus = state == "connected" || state == "connecting"
             val statusLabel = when (state) {
                 "connected" -> "ONLINE"
                 "connecting" -> "CONNECTING"
@@ -642,44 +838,92 @@ private fun ConnectionScreen(
                 else -> "OFFLINE"
             }
             val statusColor = when (state) {
-                "connected" -> EmeraldOnline
-                "connecting" -> GoldAccent
-                "error" -> Color(0xFFDC2626)
-                else -> DarkInkMuted
+                "connected" -> Color(0xFF22FF88)
+                "connecting" -> GoldText
+                "error" -> Color(0xFFEF4444)
+                else -> Color(0xFF94A3B8)
             }
+            val statusTransition = rememberInfiniteTransition(label = "statusPillPulse")
+            val pillPulsePhase by statusTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = if (state == "connecting") 750 else 1250,
+                        easing = LinearEasing,
+                    ),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "pillPulsePhase",
+            )
+            val hudSweepAngle by statusTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 4800, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "hudSweepAngle",
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "LIVE TELEMETRY",
-                    color = DarkInk,
+                    "TELEMETRY",
+                    color = Color(0xFF22FF88),
                     fontFamily = JetBrainsMonoFont,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.7.sp,
+                    letterSpacing = 0.8.sp,
                 )
                 Row(
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(statusColor.copy(alpha = 0.12f))
-                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                        .background(statusColor.copy(alpha = 0.14f))
+                        .border(1.dp, statusColor.copy(alpha = 0.48f), CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Box(
-                        Modifier
-                            .size(7.dp)
-                            .background(statusColor, CircleShape),
-                    )
+                        modifier = Modifier.size(13.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isPulsingStatus) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val maxR = size.minDimension / 2f
+                                drawCircle(
+                                    color = statusColor.copy(alpha = (1f - pillPulsePhase) * 0.68f),
+                                    radius = 3.2.dp.toPx() + (maxR - 3.2.dp.toPx()) * pillPulsePhase,
+                                    style = Stroke(width = 1.4.dp.toPx()),
+                                )
+                                drawCircle(
+                                    color = statusColor.copy(alpha = (1f - pillPulsePhase) * 0.28f),
+                                    radius = 3.2.dp.toPx() + (maxR - 3.2.dp.toPx()) * pillPulsePhase,
+                                )
+                            }
+                        }
+                        val coreScale = if (isPulsingStatus) {
+                            0.88f + 0.24f * sin(pillPulsePhase * Math.PI.toFloat())
+                        } else {
+                            1f
+                        }
+                        Box(
+                            Modifier
+                                .size((7f * coreScale).dp)
+                                .background(statusColor, CircleShape),
+                        )
+                    }
                     Text(
                         statusLabel,
                         color = statusColor,
                         fontFamily = JetBrainsMonoFont,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.4.sp,
+                        letterSpacing = 0.5.sp,
                     )
                 }
             }
@@ -690,11 +934,14 @@ private fun ConnectionScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 DesignTwoGauge(
-                    topLabel = if (pingBusy) "PING…" else "MS PING",
+                    topLabel = "ms",
                     value = pingMs?.toString() ?: "—",
-                    bottomLabel = "LATENCY",
+                    bottomLabel = "PING",
                     progress = ((pingMs ?: 0).coerceIn(0, 250) / 250f),
-                    accentColor = GoldText,
+                    secondaryProgress = if (pingMs != null) 1f - ((pingMs.coerceIn(0, 250)) / 250f) else 0f,
+                    accentColor = Color(0xFF22FF88),
+                    secondaryColor = GoldText,
+                    sweepAngleDeg = if (state == "connected" || state == "connecting" || pingBusy) hudSweepAngle else 0f,
                     modifier = Modifier
                         .weight(1f)
                         .testTag("ping_gauge")
@@ -704,6 +951,8 @@ private fun ConnectionScreen(
                 MainChassisCenterControl(
                     state = state,
                     duration = duration,
+                    sweepAngleDeg = hudSweepAngle,
+                    pulsePhase = pillPulsePhase,
                     onClick = {
                         when {
                             state == "connected" || state == "connecting" || state == "error" -> onDisconnect()
@@ -712,33 +961,41 @@ private fun ConnectionScreen(
                             else -> onBlockedProtocol()
                         }
                     },
-                    modifier = Modifier.weight(1.08f),
+                    modifier = Modifier.weight(1.12f),
                 )
 
-                val totalRate = downloadMbps + uploadMbps
+                val txSpeedMbps = if (state == "connected") {
+                    uploadMbps.coerceAtLeast(0.1)
+                } else {
+                    uploadMbps
+                }
+                val rxSpeedMbps = downloadMbps
                 DesignTwoGauge(
-                    topLabel = "Mbps TOTAL",
-                    value = "%.1f".format(totalRate),
-                    bottomLabel = "BANDWIDTH",
-                    progress = (totalRate / 50.0).toFloat().coerceIn(0f, 1f),
+                    topLabel = "Mbps",
+                    value = "%.1f".format(txSpeedMbps),
+                    bottomLabel = "TX",
+                    progress = (txSpeedMbps / 25.0).toFloat().coerceIn(0f, 1f),
+                    secondaryProgress = (rxSpeedMbps / 50.0).toFloat().coerceIn(0f, 1f),
                     accentColor = CyanGauge,
+                    secondaryColor = Color(0xFF22FF88),
+                    sweepAngleDeg = if (state == "connected") hudSweepAngle else 0f,
                     modifier = Modifier.weight(1f),
                 )
             }
 
-            // Two OLED Data Usage Readout Boxes: RX RECV & TX SENT
+            // Two F-16 DED (Data Entry Display) Odometer Readout Boxes: RX & TX
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OledTelemetryCard(
-                    label = "RX RECV",
+                    label = "RX",
                     value = formatBytes(receivedBytes),
-                    valueColor = GoldText,
+                    valueColor = Color(0xFF22FF88),
                     modifier = Modifier.weight(1f),
                 )
                 OledTelemetryCard(
-                    label = "TX SENT",
+                    label = "TX",
                     value = formatBytes(sentBytes),
                     valueColor = CyanGauge,
                     modifier = Modifier.weight(1f),
@@ -857,7 +1114,7 @@ private fun ConnectionScreen(
             }
         }
 
-        // 3. Proton VPN-Style World Map preserved from previous step!
+        // 3. Proton VPN-Style World Map with automatic user location
         ProtonWorldMapPanel(
             serverName = serverName,
             locationName = serverLocation,
@@ -865,11 +1122,11 @@ private fun ConnectionScreen(
             longitude = serverLongitude,
             userLatitude = userLatitude,
             userLongitude = userLongitude,
+            userLocationSource = userLocationSource,
+            userLocationBusy = userLocationBusy,
             vpnState = state,
-            onSetLocation = onSetLocation,
             onBrowseCountryServers = { code -> onOpenServers(code) },
-            onSaveCoordinates = onSaveLocation,
-            onSaveUserLocation = onSaveUserLocation,
+            onRequestUserLocation = onRequestUserLocation,
         )
 
         // 4. AI Live Sentinel Stream Card matching Design #2
@@ -1094,15 +1351,24 @@ private fun ConnectionScreen(
 private fun DesignTwoGauge(
     topLabel: String,
     value: String,
+    subValue: String = "",
     bottomLabel: String,
     progress: Float,
+    secondaryProgress: Float = 0f,
     accentColor: Color,
+    secondaryColor: Color = GoldText,
+    sweepAngleDeg: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = spring(stiffness = 220f, dampingRatio = 0.85f),
         label = "gaugeNeedle",
+    )
+    val animatedSecondary by animateFloatAsState(
+        targetValue = secondaryProgress.coerceIn(0f, 1f),
+        animationSpec = spring(stiffness = 180f, dampingRatio = 0.88f),
+        label = "gaugeSecondary",
     )
 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1118,47 +1384,123 @@ private fun DesignTwoGauge(
                     .padding(2.dp),
             ) {
                 val outerRadius = size.minDimension / 2f
-                // Brushed silver metallic bezel ring
+                // F-16 MFD octagonal/circular anodized bezel
                 drawCircle(
                     brush = Brush.radialGradient(
-                        listOf(Color(0xFFF4F7FA), Color(0xFFB5BFC9), Color(0xFF6B7580)),
+                        listOf(Color(0xFF283546), Color(0xFF151E29), Color(0xFF090E14)),
                     ),
                     radius = outerRadius,
                 )
-                val dialRadius = outerRadius * 0.86f
-                drawCircle(Color(0xFF0B0F15), dialRadius)
+                drawCircle(
+                    color = accentColor.copy(alpha = 0.35f),
+                    radius = outerRadius * 0.96f,
+                    style = Stroke(width = 1.dp.toPx()),
+                )
 
-                val arcSize = Size(dialRadius * 1.62f, dialRadius * 1.62f)
-                val arcTopLeft = Offset(center.x - dialRadius * 0.81f, center.y - dialRadius * 0.81f)
+                val dialRadius = outerRadius * 0.88f
+                drawCircle(Color(0xFF040A0E), dialRadius)
 
+                // Subtle F-16 radar crosshairs & concentric range rings
+                drawCircle(
+                    color = accentColor.copy(alpha = 0.10f),
+                    radius = dialRadius * 0.62f,
+                    style = Stroke(
+                        width = 0.8.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f),
+                    ),
+                )
+                drawLine(
+                    color = accentColor.copy(alpha = 0.12f),
+                    start = Offset(center.x - dialRadius * 0.72f, center.y),
+                    end = Offset(center.x + dialRadius * 0.72f, center.y),
+                    strokeWidth = 0.7.dp.toPx(),
+                )
+                drawLine(
+                    color = accentColor.copy(alpha = 0.12f),
+                    start = Offset(center.x, center.y - dialRadius * 0.72f),
+                    end = Offset(center.x, center.y + dialRadius * 0.72f),
+                    strokeWidth = 0.7.dp.toPx(),
+                )
+
+                // Corner HUD bracket ticks inside the MFD frame
+                val bracketOffset = dialRadius * 0.64f
+                val bracketArm = dialRadius * 0.16f
+                val bracketColor = accentColor.copy(alpha = 0.42f)
+                val bStroke = 1.1.dp.toPx()
+                // Top-left bracket
+                drawLine(bracketColor, Offset(center.x - bracketOffset, center.y - bracketOffset), Offset(center.x - bracketOffset + bracketArm, center.y - bracketOffset), bStroke)
+                drawLine(bracketColor, Offset(center.x - bracketOffset, center.y - bracketOffset), Offset(center.x - bracketOffset, center.y - bracketOffset + bracketArm), bStroke)
+                // Top-right bracket
+                drawLine(bracketColor, Offset(center.x + bracketOffset, center.y - bracketOffset), Offset(center.x + bracketOffset - bracketArm, center.y - bracketOffset), bStroke)
+                drawLine(bracketColor, Offset(center.x + bracketOffset, center.y - bracketOffset), Offset(center.x + bracketOffset, center.y - bracketOffset + bracketArm), bStroke)
+                // Bottom-left bracket
+                drawLine(bracketColor, Offset(center.x - bracketOffset, center.y + bracketOffset), Offset(center.x - bracketOffset + bracketArm, center.y + bracketOffset), bStroke)
+                drawLine(bracketColor, Offset(center.x - bracketOffset, center.y + bracketOffset), Offset(center.x - bracketOffset, center.y + bracketOffset - bracketArm), bStroke)
+                // Bottom-right bracket
+                drawLine(bracketColor, Offset(center.x + bracketOffset, center.y + bracketOffset), Offset(center.x + bracketOffset - bracketArm, center.y + bracketOffset), bStroke)
+                drawLine(bracketColor, Offset(center.x + bracketOffset, center.y + bracketOffset), Offset(center.x + bracketOffset, center.y + bracketOffset - bracketArm), bStroke)
+
+                // Outer primary telemetry arc
+                val arcSize = Size(dialRadius * 1.66f, dialRadius * 1.66f)
+                val arcTopLeft = Offset(center.x - dialRadius * 0.83f, center.y - dialRadius * 0.83f)
                 drawArc(
-                    color = accentColor.copy(alpha = 0.22f),
-                    startAngle = 140f,
-                    sweepAngle = 260f,
+                    color = accentColor.copy(alpha = 0.18f),
+                    startAngle = 135f,
+                    sweepAngle = 270f,
                     useCenter = false,
-                    style = Stroke(width = 1.6.dp.toPx()),
+                    style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
                     topLeft = arcTopLeft,
                     size = arcSize,
                 )
                 if (animatedProgress > 0.01f) {
                     drawArc(
                         color = accentColor,
-                        startAngle = 140f,
-                        sweepAngle = 260f * animatedProgress,
+                        startAngle = 135f,
+                        sweepAngle = 270f * animatedProgress,
                         useCenter = false,
-                        style = Stroke(width = 2.2.dp.toPx()),
+                        style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round),
                         topLeft = arcTopLeft,
                         size = arcSize,
                     )
                 }
 
-                // Precision dial ticks
-                for (tick in 0..12) {
-                    val angle = Math.toRadians(140.0 + tick * (260.0 / 12.0))
-                    val outer = dialRadius * 0.89f
-                    val inner = dialRadius * if (tick % 3 == 0) 0.76f else 0.82f
+                // Inner secondary telemetry arc (e.g. signal quality or DL rate)
+                val innerArcSize = Size(dialRadius * 1.38f, dialRadius * 1.38f)
+                val innerArcTopLeft = Offset(center.x - dialRadius * 0.69f, center.y - dialRadius * 0.69f)
+                drawArc(
+                    color = secondaryColor.copy(alpha = 0.14f),
+                    startAngle = 135f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    style = Stroke(width = 1.4.dp.toPx()),
+                    topLeft = innerArcTopLeft,
+                    size = innerArcSize,
+                )
+                if (animatedSecondary > 0.01f) {
+                    drawArc(
+                        color = secondaryColor.copy(alpha = 0.85f),
+                        startAngle = 135f,
+                        sweepAngle = 270f * animatedSecondary,
+                        useCenter = false,
+                        style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+                        topLeft = innerArcTopLeft,
+                        size = innerArcSize,
+                    )
+                }
+
+                // 24 F-16 azimuth/nozzle precision ticks
+                for (tick in 0..24) {
+                    val angle = Math.toRadians(135.0 + tick * (270.0 / 24.0))
+                    val isMajor = tick % 4 == 0
+                    val lit = (tick / 24f) <= animatedProgress && animatedProgress > 0.01f
+                    val outer = dialRadius * 0.93f
+                    val inner = dialRadius * if (isMajor) 0.78f else 0.85f
                     drawLine(
-                        color = if (tick % 3 == 0) accentColor else Color(0xFF475569),
+                        color = when {
+                            lit -> accentColor
+                            isMajor -> accentColor.copy(alpha = 0.55f)
+                            else -> Color(0xFF334155)
+                        },
                         start = Offset(
                             center.x + cos(angle).toFloat() * inner,
                             center.y + sin(angle).toFloat() * inner,
@@ -1167,24 +1509,48 @@ private fun DesignTwoGauge(
                             center.x + cos(angle).toFloat() * outer,
                             center.y + sin(angle).toFloat() * outer,
                         ),
-                        strokeWidth = if (tick % 3 == 0) 1.3.dp.toPx() else 0.8.dp.toPx(),
+                        strokeWidth = if (isMajor) 1.4.dp.toPx() else 0.8.dp.toPx(),
                     )
                 }
 
-                // Needle
-                val needleDeg = 140.0 + 260.0 * animatedProgress
+                // Rotating radar sweep line when active
+                if (sweepAngleDeg > 0f) {
+                    val sweepRad = Math.toRadians(sweepAngleDeg.toDouble())
+                    drawLine(
+                        color = accentColor.copy(alpha = 0.25f),
+                        start = center,
+                        end = Offset(
+                            center.x + cos(sweepRad).toFloat() * dialRadius * 0.75f,
+                            center.y + sin(sweepRad).toFloat() * dialRadius * 0.75f,
+                        ),
+                        strokeWidth = 1.1.dp.toPx(),
+                    )
+                }
+
+                // Tactical HUD needle + target-lock diamond at tip
+                val needleDeg = 135.0 + 270.0 * animatedProgress
                 val rad = Math.toRadians(needleDeg)
                 val tip = Offset(
-                    center.x + cos(rad).toFloat() * dialRadius * 0.58f,
-                    center.y + sin(rad).toFloat() * dialRadius * 0.58f,
+                    center.x + cos(rad).toFloat() * dialRadius * 0.68f,
+                    center.y + sin(rad).toFloat() * dialRadius * 0.68f,
                 )
                 drawLine(
-                    color = accentColor,
+                    color = accentColor.copy(alpha = 0.85f),
                     start = center,
                     end = tip,
-                    strokeWidth = 2.dp.toPx(),
+                    strokeWidth = 1.8.dp.toPx(),
                 )
-                drawCircle(accentColor, radius = 3.dp.toPx(), center = center)
+                val dSize = 3.2.dp.toPx()
+                val diamond = Path().apply {
+                    moveTo(tip.x, tip.y - dSize)
+                    lineTo(tip.x + dSize, tip.y)
+                    lineTo(tip.x, tip.y + dSize)
+                    lineTo(tip.x - dSize, tip.y)
+                    close()
+                }
+                drawPath(diamond, color = accentColor)
+                drawCircle(Color(0xFF040A0E), radius = 4.dp.toPx(), center = center)
+                drawCircle(accentColor, radius = 2.4.dp.toPx(), center = center)
             }
 
             Column(
@@ -1196,28 +1562,37 @@ private fun DesignTwoGauge(
             ) {
                 Text(
                     topLabel,
-                    color = Color(0xFFCBD5E1),
+                    color = accentColor.copy(alpha = 0.85f),
                     fontFamily = JetBrainsMonoFont,
-                    fontSize = 7.sp,
+                    fontSize = 7.5.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.4.sp,
                 )
-                Text(
-                    value,
-                    color = accentColor,
-                    fontFamily = JetBrainsMonoFont,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xD903080C))
+                        .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        value,
+                        color = accentColor,
+                        fontFamily = JetBrainsMonoFont,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(5.dp))
         Text(
             bottomLabel,
-            color = DarkInk,
+            color = Color(0xFFE2E8F0),
             fontFamily = JetBrainsMonoFont,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
+            letterSpacing = 0.6.sp,
         )
     }
 }
@@ -1226,6 +1601,8 @@ private fun DesignTwoGauge(
 private fun MainChassisCenterControl(
     state: String,
     duration: String,
+    sweepAngleDeg: Float = 0f,
+    pulsePhase: Float = 0f,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1234,10 +1611,10 @@ private fun MainChassisCenterControl(
     val isError = state == "error"
 
     val statusColor = when {
-        connected -> EmeraldOnline
+        connected -> Color(0xFF22FF88)
         connecting -> GoldText
         isError -> Color(0xFFEF4444)
-        else -> Color(0xFF94A3B8)
+        else -> Color(0xFF38BDF8)
     }
     val statusWord = when {
         connected -> "ONLINE"
@@ -1256,10 +1633,10 @@ private fun MainChassisCenterControl(
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        listOf(Color(0xFFFFFFFF), Color(0xFFDCE2E8), Color(0xFF9AA3AE)),
+                        listOf(Color(0xFF2E3D52), Color(0xFF182230), Color(0xFF0A1017)),
                     ),
                 )
-                .border(1.5.dp, Color(0xFFF8FAFC), CircleShape)
+                .border(1.5.dp, statusColor.copy(alpha = 0.65f), CircleShape)
                 .clickable(
                     onClickLabel = if (connected || connecting || isError) "Disconnect VPN" else "Connect VPN",
                     role = Role.Button,
@@ -1269,7 +1646,7 @@ private fun MainChassisCenterControl(
                     contentDescription = "VPN connection"
                     stateDescription = statusWord
                 }
-                .padding(7.dp),
+                .padding(6.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -1279,24 +1656,66 @@ private fun MainChassisCenterControl(
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                if (connected) Color(0xFF0A2E25) else Color(0xFF101923),
-                                Color(0xFF060B10),
+                                if (connected) Color(0xFF07291E) else if (connecting) Color(0xFF261C0A) else Color(0xFF08131C),
+                                Color(0xFF03070B),
                             ),
                         ),
                     )
                     .border(
-                        width = 2.dp,
-                        color = if (connected) EmeraldOnline else if (connecting) GoldText else Color(0xFF334155),
+                        width = 1.8.dp,
+                        color = statusColor.copy(alpha = if (connected || connecting) 0.9f else 0.45f),
                         shape = CircleShape,
                     ),
             ) {
-                if (connecting) {
-                    CircularProgressIndicator(
-                        color = GoldText,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.fillMaxSize().padding(6.dp),
-                    )
+                // F-16 HUD Pitch Ladder, Horizon Line, & Rotating Tactical Lock Ring
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val r = size.minDimension / 2f
+                    // Pulsing radar wave when connected or connecting
+                    if (connected || connecting) {
+                        drawCircle(
+                            color = statusColor.copy(alpha = (1f - pulsePhase) * 0.42f),
+                            radius = r * (0.48f + 0.44f * pulsePhase),
+                            style = Stroke(width = 1.5.dp.toPx()),
+                        )
+                    }
+
+                    // Artificial horizon line & pitch ladder rungs
+                    val ladderColor = statusColor.copy(alpha = 0.28f)
+                    val lStroke = 1.dp.toPx()
+                    // Horizon wings
+                    drawLine(ladderColor, Offset(center.x - r * 0.72f, center.y), Offset(center.x - r * 0.36f, center.y), lStroke)
+                    drawLine(ladderColor, Offset(center.x + r * 0.36f, center.y), Offset(center.x + r * 0.72f, center.y), lStroke)
+                    // Upper pitch rung (+10 deg)
+                    val upperY = center.y - r * 0.34f
+                    drawLine(ladderColor, Offset(center.x - r * 0.46f, upperY), Offset(center.x - r * 0.22f, upperY), lStroke)
+                    drawLine(ladderColor, Offset(center.x - r * 0.46f, upperY), Offset(center.x - r * 0.46f, upperY + r * 0.07f), lStroke)
+                    drawLine(ladderColor, Offset(center.x + r * 0.22f, upperY), Offset(center.x + r * 0.46f, upperY), lStroke)
+                    drawLine(ladderColor, Offset(center.x + r * 0.46f, upperY), Offset(center.x + r * 0.46f, upperY + r * 0.07f), lStroke)
+                    // Lower pitch rung (-10 deg)
+                    val lowerY = center.y + r * 0.34f
+                    drawLine(ladderColor, Offset(center.x - r * 0.46f, lowerY), Offset(center.x - r * 0.22f, lowerY), lStroke)
+                    drawLine(ladderColor, Offset(center.x - r * 0.46f, lowerY), Offset(center.x - r * 0.46f, lowerY - r * 0.07f), lStroke)
+                    drawLine(ladderColor, Offset(center.x + r * 0.22f, lowerY), Offset(center.x + r * 0.46f, lowerY), lStroke)
+                    drawLine(ladderColor, Offset(center.x + r * 0.46f, lowerY), Offset(center.x + r * 0.46f, lowerY - r * 0.07f), lStroke)
+
+                    // Segmented rotating tactical lock ring
+                    val ringRadius = r * 0.84f
+                    val arcBox = Size(ringRadius * 2f, ringRadius * 2f)
+                    val arcTopLeft = Offset(center.x - ringRadius, center.y - ringRadius)
+                    val baseAngle = if (connected || connecting) sweepAngleDeg else 0f
+                    for (seg in 0 until 4) {
+                        drawArc(
+                            color = statusColor.copy(alpha = if (connected || connecting) 0.78f else 0.35f),
+                            startAngle = baseAngle + seg * 90f + 18f,
+                            sweepAngle = 54f,
+                            useCenter = false,
+                            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                            topLeft = arcTopLeft,
+                            size = arcBox,
+                        )
+                    }
                 }
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
@@ -1304,23 +1723,24 @@ private fun MainChassisCenterControl(
                     Icon(
                         imageVector = Icons.Filled.Bolt,
                         contentDescription = null,
-                        tint = if (connected || connecting) GoldText else Color(0xFFD9822B),
-                        modifier = Modifier.size(28.dp),
+                        tint = statusColor,
+                        modifier = Modifier.size(24.dp),
                     )
                     Text(
                         statusWord,
                         color = statusColor,
                         fontFamily = JetBrainsMonoFont,
-                        fontSize = 9.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.6.sp,
+                        letterSpacing = 0.8.sp,
                     )
                     if (connected) {
                         Text(
                             duration,
-                            color = Color(0xFFCBD5E1),
+                            color = Color(0xFFE2E8F0),
                             fontFamily = JetBrainsMonoFont,
-                            fontSize = 7.sp,
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -1328,12 +1748,12 @@ private fun MainChassisCenterControl(
         }
         Spacer(Modifier.height(5.dp))
         Text(
-            "MAIN CHASSIS",
-            color = DarkInk,
+            "STATUS",
+            color = Color(0xFFE2E8F0),
             fontFamily = JetBrainsMonoFont,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
+            letterSpacing = 0.6.sp,
         )
     }
 }
@@ -1348,9 +1768,9 @@ private fun OledTelemetryCard(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
-            .background(Color(0xFF070C12))
-            .border(1.5.dp, Color(0xFF535D68), RoundedCornerShape(9.dp))
-            .padding(horizontal = 11.dp, vertical = 11.dp),
+            .background(Color(0xFF04090E))
+            .border(1.2.dp, valueColor.copy(alpha = 0.42f), RoundedCornerShape(9.dp))
+            .padding(horizontal = 11.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -1360,6 +1780,7 @@ private fun OledTelemetryCard(
             fontFamily = JetBrainsMonoFont,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp,
         )
         Text(
             value,
@@ -1583,13 +2004,409 @@ private fun SettingsScreen(
 }
 
 @Composable
+private fun TrialLicenseStatusBar(
+    licenseStatus: NetconLicenseManager.LicenseStatus,
+    onOpenLicenseDialog: () -> Unit,
+) {
+    val isLicensed = licenseStatus.isLicensed
+    val isFrozen = licenseStatus.isFrozen
+    val borderColor = when {
+        isLicensed -> EmeraldOnline
+        isFrozen -> Color(0xFFEF4444)
+        else -> GoldText
+    }
+    val dotColor = borderColor
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF0A111A))
+            .border(1.dp, borderColor.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+            .testTag("trial_license_bar")
+            .clickable { onOpenLicenseDialog() }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(dotColor),
+            )
+            Text(
+                text = licenseStatus.badgeSummary(),
+                color = if (isFrozen) Color(0xFFFCA5A5) else Color(0xFFF1F5F9),
+                fontFamily = JetBrainsMonoFont,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (isLicensed) Color(0xFF102A22) else GoldAccent.copy(alpha = 0.22f))
+                .border(
+                    1.dp,
+                    if (isLicensed) EmeraldOnline.copy(alpha = 0.6f) else GoldText.copy(alpha = 0.7f),
+                    RoundedCornerShape(6.dp),
+                )
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = if (isLicensed) "LICENSED" else "ACTIVATE KEY",
+                color = if (isLicensed) Color(0xFF4ADE80) else GoldText,
+                fontFamily = JetBrainsMonoFont,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LicenseActivationDialog(
+    licenseStatus: NetconLicenseManager.LicenseStatus,
+    onDismiss: () -> Unit,
+    onActivateLicenseKey: (String, String) -> NetconLicenseManager.ActivationResult,
+    onSimulateTrialExpired: () -> Unit,
+    onResetTrialWindow: () -> Unit,
+) {
+    var accountInput by rememberSaveable {
+        mutableStateOf(
+            licenseStatus.activatedAccount.ifBlank { NetconLicenseManager.DEFAULT_DEMO_ACCOUNT },
+        )
+    }
+    var keyInput by rememberSaveable { mutableStateOf("") }
+    var feedbackMsg by remember { mutableStateOf("") }
+    var feedbackError by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(NetconColors.PanelSurface)
+                .border(1.dp, GoldText.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "1-KEY-PER-ACCOUNT LICENSE",
+                    color = NetconColors.TextPrimary,
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.minimumInteractiveComponentSize()) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = NetconColors.TextSecondary)
+                }
+            }
+
+            Text(
+                text = if (licenseStatus.isLicensed) {
+                    "Bound to ${licenseStatus.activatedAccount} (${licenseStatus.activatedKeyMasked}). Each Netcon key works exclusively for its assigned account."
+                } else {
+                    "3-day (72-hour) free trial (${licenseStatus.formatRemainingCountdown()} remaining). Each activation key is cryptographically bound to one account email and refuses activation on any other account."
+                },
+                color = NetconColors.TextSecondary,
+                fontSize = 11.sp,
+            )
+
+            RecessedInput(
+                value = accountInput,
+                onValueChange = { accountInput = it },
+                placeholder = "Account email (e.g. arxdevmm@gmail.com)",
+                modifier = Modifier.testTag("dialog_account_input"),
+            )
+
+            RecessedInput(
+                value = keyInput,
+                onValueChange = { keyInput = it },
+                placeholder = "NETCON-XXXX-XXXX-XXXX-XXXX",
+                modifier = Modifier.testTag("dialog_license_input"),
+            )
+
+            if (feedbackMsg.isNotBlank()) {
+                Text(
+                    text = feedbackMsg,
+                    color = if (feedbackError) Color(0xFFFCA5A5) else Color(0xFF4ADE80),
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 10.sp,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryActionButton(
+                    label = "ISSUE FOR EMAIL",
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val targetAccount = accountInput.trim().ifBlank { NetconLicenseManager.DEFAULT_DEMO_ACCOUNT }
+                        accountInput = targetAccount
+                        keyInput = NetconLicenseManager.generateLicenseKeyForAccount(targetAccount, "FULL", "2026")
+                        feedbackError = false
+                        feedbackMsg = "Generated 1-account key locked to $targetAccount. Tap ACTIVATE KEY."
+                    },
+                )
+                CopperButton(
+                    label = "ACTIVATE KEY",
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("dialog_activate_key_button"),
+                    onClick = {
+                        val res = onActivateLicenseKey(accountInput, keyInput)
+                        feedbackError = !res.success
+                        feedbackMsg = res.message
+                    },
+                )
+            }
+
+            Box(Modifier.fillMaxWidth().height(1.dp).background(NetconColors.BevelBorder))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryActionButton(
+                    label = "TEST FREEZE",
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("test_freeze_button"),
+                    onClick = onSimulateTrialExpired,
+                )
+                SecondaryActionButton(
+                    label = "RESET 3D TRIAL",
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        onResetTrialWindow()
+                        feedbackError = false
+                        feedbackMsg = "3-day (72h) trial timer reset."
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrozenTrialLockOverlay(
+    licenseStatus: NetconLicenseManager.LicenseStatus,
+    onActivateLicenseKey: (String, String) -> NetconLicenseManager.ActivationResult,
+    onResetTrialWindow: () -> Unit,
+) {
+    var accountInput by rememberSaveable {
+        mutableStateOf(NetconLicenseManager.DEFAULT_DEMO_ACCOUNT)
+    }
+    var keyInput by rememberSaveable { mutableStateOf("") }
+    var statusMessage by remember {
+        mutableStateOf("3-day free trial expired. Enter your registered Account Email and your 1-account Netcon License Key to unlock.")
+    }
+    var isError by remember { mutableStateOf(true) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF205080E))
+            .clickable(enabled = true, onClick = {})
+            .testTag("frozen_trial_lock_overlay")
+            .padding(18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 460.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF1A0F14), Color(0xFF0D131D), Color(0xFF070B11)),
+                    ),
+                )
+                .border(1.5.dp, Color(0xFFEF4444), RoundedCornerShape(14.dp))
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(11.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2B0D12))
+                    .border(1.5.dp, Color(0xFFEF4444), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Lock,
+                    contentDescription = "APK Frozen",
+                    tint = Color(0xFFF87171),
+                    modifier = Modifier.size(25.dp),
+                )
+            }
+
+            Text(
+                text = "APK FROZEN · 3-DAY TRIAL EXPIRED",
+                color = Color(0xFFF87171),
+                fontFamily = JetBrainsMonoFont,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+                textAlign = TextAlign.Center,
+            )
+
+            Text(
+                text = "1 KEY = 1 ACCOUNT · ALL SERVERS REFUSED",
+                color = GoldText,
+                fontFamily = JetBrainsMonoFont,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+
+            Text(
+                text = statusMessage,
+                color = if (isError) Color(0xFFFCA5A5) else Color(0xFF4ADE80),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+            )
+
+            RecessedInput(
+                value = accountInput,
+                onValueChange = { accountInput = it },
+                placeholder = "Account email (e.g. arxdevmm@gmail.com)",
+                modifier = Modifier.testTag("frozen_account_input"),
+            )
+
+            RecessedInput(
+                value = keyInput,
+                onValueChange = { keyInput = it },
+                placeholder = "Enter license key: NETCON-XXXX-XXXX-XXXX-XXXX",
+                modifier = Modifier.testTag("frozen_license_input"),
+            )
+
+            CopperButton(
+                label = "ACTIVATE ACCOUNT-BOUND KEY",
+                icon = Icons.Filled.Lock,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("frozen_activate_button"),
+                onClick = {
+                    val result = onActivateLicenseKey(accountInput, keyInput)
+                    isError = !result.success
+                    statusMessage = result.message
+                },
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SecondaryActionButton(
+                    label = "FILL ACCOUNT KEY",
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("frozen_fill_demo_key_button"),
+                    onClick = {
+                        val targetAccount = accountInput.trim().ifBlank { NetconLicenseManager.DEFAULT_DEMO_ACCOUNT }
+                        accountInput = targetAccount
+                        keyInput = NetconLicenseManager.generateLicenseKeyForAccount(targetAccount, "FULL", "2026")
+                        isError = false
+                        statusMessage = "Loaded key ${keyInput} bound only to $targetAccount."
+                    },
+                )
+                SecondaryActionButton(
+                    label = "RESET 3D TRIAL",
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("frozen_reset_trial_button"),
+                    onClick = onResetTrialWindow,
+                )
+            }
+
+            Text(
+                text = "Each key is HMAC-signed for one account email (${licenseStatus.badgeSummary()})",
+                color = NetconColors.TextSecondary,
+                fontFamily = JetBrainsMonoFont,
+                fontSize = 8.5.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
 private fun InfoScreen(
     serverName: String,
     protocol: String,
     state: String,
+    licenseStatus: NetconLicenseManager.LicenseStatus,
+    onOpenLicenseDialog: () -> Unit,
+    onSimulateTrialExpired: (Boolean) -> Unit,
+    onResetTrialWindow: () -> Unit,
     onOpenVpnSettings: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle("LICENSE & 1-KEY-PER-ACCOUNT ENFORCEMENT")
+        MetalPanel {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                InfoRow("License State", licenseStatus.state.name)
+                InfoRow("Trial Countdown", licenseStatus.formatRemainingCountdown())
+                InfoRow("Server Access", if (licenseStatus.isAccessAllowed) "ALLOWED" else "FROZEN · REFUSED")
+                InfoRow("Account Binding", "1 Key = 1 Account (HMAC-SHA256)")
+                if (licenseStatus.isLicensed) {
+                    InfoRow("Bound Account", licenseStatus.activatedAccount)
+                    InfoRow("Activated Key", licenseStatus.activatedKeyMasked)
+                }
+                Text(
+                    "Issue a single-account key via CLI: bash scripts/manage-keystore.sh generate-license-key <customer@email.com>",
+                    color = NetconColors.TextSecondary,
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 9.5.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CopperButton(
+                        label = "ENTER LICENSE KEY",
+                        modifier = Modifier.weight(1f),
+                        onClick = onOpenLicenseDialog,
+                    )
+                    SecondaryActionButton(
+                        label = "SIMULATE EXPIRED",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onSimulateTrialExpired(true) },
+                    )
+                }
+                SecondaryActionButton(
+                    label = "RESET 3-DAY (72H) FREE TRIAL",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onResetTrialWindow,
+                )
+            }
+        }
+
+        SectionTitle("GITHUB RELEASE & KEYSTORE SIGNING")
+        MetalPanel {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoRow("Workflow", ".github/workflows/release-apk.yml")
+                InfoRow("Keystore Manager", "scripts/manage-keystore.sh")
+                InfoRow("Signing Alias", "upload (my-upload-key.jks)")
+                InfoRow("Env Secrets", "KEYSTORE_BASE64 · STORE_PASSWORD · KEY_PASSWORD")
+                Text(
+                    "Push any v* git tag (e.g. v1.0.5) or trigger the GitHub Actions workflow to build, sign, verify, and publish the release APK + SHA-256 checksum to GitHub Releases.",
+                    color = NetconColors.TextSecondary,
+                    fontSize = 11.sp,
+                )
+            }
+        }
+
         SectionTitle("DEVICE & CORE TELEMETRY")
         MetalPanel {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1661,9 +2478,11 @@ private fun InfoScreen(
 @Composable
 private fun PublicServerDialog(
     initialCountryCode: String,
+    activeServerName: String = "",
     onDismiss: () -> Unit,
     fetchNodes: suspend (String) -> NativePublicDirectory.Result,
     onSelectNode: (NativePublicDirectory.Node) -> Unit,
+    onSelectPreset: (NativeXrayConfig.ServerProfilePreset) -> Unit = {},
     onImport: (String) -> Unit,
 ) {
     var raw by rememberSaveable { mutableStateOf("") }
@@ -1673,6 +2492,7 @@ private fun PublicServerDialog(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var nodes by remember { mutableStateOf(emptyList<NativePublicDirectory.Node>()) }
+    val presets = remember { NativeXrayConfig.presetProfiles() }
     val scope = rememberCoroutineScope()
 
     fun refresh() {
@@ -1693,6 +2513,11 @@ private fun PublicServerDialog(
     }
 
     LaunchedEffect(countryCode) { refresh() }
+
+    val visiblePresets = presets.filter {
+        (countryCode.isEmpty() || it.countryCode == countryCode) &&
+            (search.isBlank() || "${it.name} ${it.countryName} ${it.protocol} ${it.transportSummary}".contains(search, ignoreCase = true))
+    }
 
     val visibleNodes = nodes.filter {
         search.isBlank() || "${it.name} ${it.country} ${it.protocol}".contains(search, ignoreCase = true)
@@ -1716,7 +2541,7 @@ private fun PublicServerDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "FREE PUBLIC SERVERS",
+                    "SERVER PROFILES & DIRECTORY",
                     color = NetconColors.TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
@@ -1725,10 +2550,60 @@ private fun PublicServerDialog(
                     Icon(Icons.Filled.Close, contentDescription = "Close", tint = NetconColors.TextSecondary)
                 }
             }
+
+            if (visiblePresets.isNotEmpty()) {
+                Text(
+                    "STABILIZED MULTI-PROTOCOL PROFILES",
+                    color = NetconColors.CopperLight,
+                    fontFamily = JetBrainsMonoFont,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                visiblePresets.forEach { preset ->
+                    val isSelected = preset.name == activeServerName
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) Color(0xFF122638) else NetconColors.ChassisDark)
+                            .border(
+                                1.dp,
+                                if (isSelected) NetconColors.CyberCyan else NetconColors.BevelBorder,
+                                RoundedCornerShape(8.dp),
+                            )
+                            .padding(horizontal = 10.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${preset.countryCode} · ${preset.name}",
+                                color = NetconColors.TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "${preset.transportSummary} · ${preset.cityLabel}",
+                                color = NetconColors.CyberCyan,
+                                fontFamily = JetBrainsMonoFont,
+                                fontSize = 9.sp,
+                            )
+                        }
+                        CopperButton(
+                            label = if (isSelected) "ACTIVE" else "USE",
+                            onClick = { onSelectPreset(preset) },
+                        )
+                    }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(NetconColors.BevelBorder))
+            }
+
             Text(
-                "FastNodes community feed. Public nodes are untrusted and may have variable uptime.",
+                "FREE PUBLIC SERVERS · FASTNODES COMMUNITY FEED",
                 color = NetconColors.TextSecondary,
-                fontSize = 11.sp,
+                fontFamily = JetBrainsMonoFont,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
             )
 
             Box {
@@ -1828,62 +2703,6 @@ private fun PublicServerDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SecondaryActionButton("CANCEL", modifier = Modifier.weight(1f), onClick = onDismiss)
                 CopperButton("IMPORT LOCALLY", Modifier.weight(1f)) { onImport(raw.trim()) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LocationDialog(
-    initialName: String,
-    initialLatitude: Double?,
-    initialLongitude: Double?,
-    onDismiss: () -> Unit,
-    onSave: (String, Double, Double) -> Unit,
-) {
-    var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
-    var latitude by rememberSaveable(initialLatitude) { mutableStateOf(initialLatitude?.toString().orEmpty()) }
-    var longitude by rememberSaveable(initialLongitude) { mutableStateOf(initialLongitude?.toString().orEmpty()) }
-    var error by rememberSaveable { mutableStateOf("") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(NetconColors.PanelSurface)
-                .border(1.dp, NetconColors.BevelHighlight, RoundedCornerShape(12.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                "SERVER MAP LOCATION",
-                color = NetconColors.TextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "Enter location name and coordinates for your server node. Saved locally on this device.",
-                color = NetconColors.TextSecondary,
-                fontSize = 11.sp,
-            )
-            RecessedInput(name, { name = it }, "Location name, e.g. Singapore")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RecessedInput(latitude, { latitude = it }, "Latitude", Modifier.weight(1f))
-                RecessedInput(longitude, { longitude = it }, "Longitude", Modifier.weight(1f))
-            }
-            if (error.isNotBlank()) Text(error, color = NetconColors.ErrorRed, fontSize = 11.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryActionButton("CANCEL", Modifier.weight(1f), onClick = onDismiss)
-                CopperButton("SAVE LOCATION", Modifier.weight(1f)) {
-                    val lat = latitude.toDoubleOrNull()
-                    val lon = longitude.toDoubleOrNull()
-                    if (name.isBlank() || lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
-                        error = "Enter a valid name and coordinates."
-                    } else {
-                        onSave(name.trim(), lat, lon)
-                    }
-                }
             }
         }
     }
