@@ -1,0 +1,11 @@
+{
+  "name": "netcon",
+  "private": true,
+  "version": "1.0.5",
+  "scripts": {
+    "dev": "node server.cjs",
+    "start": "node server.cjs",
+    "build": "node -c server.cjs",
+    "lint": "node -c server.cjs"
+  }
+}

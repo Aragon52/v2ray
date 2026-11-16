@@ -1,0 +1,106 @@
+name: Build, Sign & Publish Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (e.g. v1.0.5)"
+        required: false
+        default: "v1.0.5"
+
+permissions:
+  contents: write
+
+jobs:
+  release-apk:
+    name: Sign & Release Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode Release Keystore from GitHub Secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > "${GITHUB_WORKSPACE}/my-upload-key.jks"
+            chmod 600 "${GITHUB_WORKSPACE}/my-upload-key.jks"
+            echo "Decoded release keystore from KEYSTORE_BASE64 secret."
+          else
+            echo "KEYSTORE_BASE64 not set; generating ephemeral CI keystore for build verification..."
+            STORE_PASSWORD="${STORE_PASSWORD:-netcon-ci-store-pass}" \
+            KEY_PASSWORD="${KEY_PASSWORD:-netcon-ci-store-pass}" \
+            bash scripts/manage-keystore.sh generate-keystore "${GITHUB_WORKSPACE}/my-upload-key.jks"
+          fi
+
+      - name: Run Unit Tests (3-Day Trial, License Manager & Core Logic)
+        run: gradle testDebugUnitTest --no-daemon
+
+      - name: Build Signed Release APK
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD != '' && secrets.STORE_PASSWORD || 'netcon-ci-store-pass' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD != '' && secrets.KEY_PASSWORD || 'netcon-ci-store-pass' }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Prepare Release Artifacts & Checksums
+        id: artifact
+        run: |
+          TAG_NAME="${{ github.event.inputs.release_tag || github.ref_name }}"
+          APK_SOURCE="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+          if [ -z "$APK_SOURCE" ]; then
+            echo "No release APK found under app/build/outputs/apk/release"
+            exit 1
+          fi
+          OUT_APK="netcon-${TAG_NAME}-release.apk"
+          cp "$APK_SOURCE" "$OUT_APK"
+          bash scripts/manage-keystore.sh verify-apk "$OUT_APK"
+          echo "apk_file=${OUT_APK}" >> "$GITHUB_OUTPUT"
+          echo "sha_file=${OUT_APK}.sha256" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Signed APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: netcon-release-apk
+          path: |
+            ${{ steps.artifact.outputs.apk_file }}
+            ${{ steps.artifact.outputs.sha_file }}
+
+      - name: Publish to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.artifact.outputs.tag_name }}
+          name: "Netcon VPN ${{ steps.artifact.outputs.tag_name }}"
+          generate_release_notes: true
+          body: |
+            ### Netcon Multi-Protocol VPN (${{ steps.artifact.outputs.tag_name }})
+            - **3-Day (72-Hour) Free Trial**: Full access to VLESS-Reality, VMess-WS-TLS, Trojan-gRPC, and Shadowsocks-2022 profiles for 72 hours from installation.
+            - **License Enforcement**: After 72 hours, activate a signed Netcon license key (`NETCON-XXXX-XXXX-XXXX-XXXX`) to unlock unlimited connections.
+            - **SHA-256 Checksum**: Verify `${{ steps.artifact.outputs.apk_file }}` against `${{ steps.artifact.outputs.sha_file }}`.
+          files: |
+            ${{ steps.artifact.outputs.apk_file }}
+            ${{ steps.artifact.outputs.sha_file }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up decoded Keystore
+        if: always()
+        run: rm -f "${GITHUB_WORKSPACE}/my-upload-key.jks"

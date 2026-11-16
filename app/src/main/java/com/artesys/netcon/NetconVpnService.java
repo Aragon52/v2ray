@@ -1,5 +1,6 @@
 package com.artesys.netcon;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -13,6 +14,7 @@ import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.Handler;
@@ -20,7 +22,9 @@ import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 
+import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -68,20 +72,60 @@ public final class NetconVpnService extends VpnService {
     private static volatile long previousCoreReceivedBytes;
     private static volatile long previousCoreSentBytes;
     private static volatile String primaryOutboundTag = "proxy";
+    private static volatile String lastActiveCoreConfig = "";
+    private static volatile int consecutiveHealthFailures = 0;
     private static CoreController coreController;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ParcelFileDescriptor vpnInterface;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
     private final Runnable healthCheck = new Runnable() {
         @Override
         public void run() {
+            if (!NetconLicenseManager.isAccessAllowed(NetconVpnService.this)) {
+                mainHandler.removeCallbacks(this);
+                worker.execute(() -> {
+                    stopTunnel();
+                    setState("error", "3-day free trial expired. Purchase and activate a license key to connect.");
+                    broadcastStatus(NetconVpnService.this);
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf();
+                });
+                return;
+            }
             boolean failed = false;
+            boolean attemptRestart = false;
             synchronized (LOCK) {
-                if ("connected".equals(state) && (coreController == null || !coreController.getIsRunning())) {
-                    setStateLocked("error", "Xray stopped unexpectedly. Traffic remains blocked until you disconnect.");
-                    failed = true;
+                if ("connected".equals(state)) {
+                    if (coreController == null || !coreController.getIsRunning()) {
+                        consecutiveHealthFailures++;
+                        if (consecutiveHealthFailures == 1 && vpnInterface != null && !lastActiveCoreConfig.isEmpty()) {
+                            attemptRestart = true;
+                        } else if (consecutiveHealthFailures >= 2) {
+                            setStateLocked("error", "Xray stopped unexpectedly. Traffic remains blocked until you disconnect.");
+                            failed = true;
+                        }
+                    } else {
+                        consecutiveHealthFailures = 0;
+                    }
                 }
+            }
+            if (attemptRestart) {
+                worker.execute(() -> {
+                    synchronized (LOCK) {
+                        if ("connected".equals(state) && coreController != null && !coreController.getIsRunning() && vpnInterface != null) {
+                            try {
+                                coreController.startLoop(lastActiveCoreConfig, vpnInterface.getFd());
+                                if (coreController.getIsRunning()) {
+                                    consecutiveHealthFailures = 0;
+                                }
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                });
             }
             if (failed) {
                 updateNotification("VPN blocked: Xray stopped");
@@ -101,6 +145,18 @@ public final class NetconVpnService extends VpnService {
             worker.execute(() -> {
                 stopTunnel();
                 setState("disconnected", "");
+                broadcastStatus(NetconVpnService.this);
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf(startId);
+            });
+            return START_NOT_STICKY;
+        }
+
+        if (!NetconLicenseManager.isAccessAllowed(this)) {
+            mainHandler.removeCallbacks(healthCheck);
+            worker.execute(() -> {
+                stopTunnel();
+                setState("error", "3-day free trial expired. Purchase and activate a license key to connect.");
                 broadcastStatus(NetconVpnService.this);
                 stopForeground(STOP_FOREGROUND_REMOVE);
                 stopSelf(startId);
@@ -188,6 +244,10 @@ public final class NetconVpnService extends VpnService {
             config.put("stats", new JSONObject());
             config.put("policy", new JSONObject()
                 .put("levels", new JSONObject().put("0", new JSONObject()
+                    .put("handshake", 4)
+                    .put("connIdle", 300)
+                    .put("uplinkOnly", 2)
+                    .put("downlinkOnly", 5)
                     .put("statsUserUplink", true)
                     .put("statsUserDownlink", true)))
                 .put("system", new JSONObject()
@@ -214,6 +274,7 @@ public final class NetconVpnService extends VpnService {
                 throw new IllegalStateException("Android could not establish the VPN interface.");
             }
             setUnderlyingNetworks(new Network[] { underlyingNetwork });
+            registerNetworkHandoffCallback(connectivity);
 
             Seq.setContext(getApplicationContext());
             Libv2ray.initCoreEnv(getFilesDir().getAbsolutePath(), "");
@@ -222,11 +283,24 @@ public final class NetconVpnService extends VpnService {
                 @Override public long shutdown() { return 0; }
                 @Override public long onEmitStatus(long statusCode, String message) { return 0; }
             });
+            String finalConfigJson = config.toString();
             synchronized (LOCK) {
                 coreController = controller;
                 primaryOutboundTag = trackedTag;
+                lastActiveCoreConfig = finalConfigJson;
+                consecutiveHealthFailures = 0;
             }
-            controller.startLoop(config.toString(), vpnInterface.getFd());
+            try {
+                controller.startLoop(finalConfigJson, vpnInterface.getFd());
+            } catch (Exception firstStartErr) {
+                // Attempt stabilized fallback without custom sockopt/stream extensions if core rejected a field
+                stripAdvancedStreamExtensions(config);
+                finalConfigJson = config.toString();
+                synchronized (LOCK) {
+                    lastActiveCoreConfig = finalConfigJson;
+                }
+                controller.startLoop(finalConfigJson, vpnInterface.getFd());
+            }
             if (!controller.getIsRunning()) {
                 throw new IllegalStateException("Xray did not start.");
             }
@@ -255,6 +329,53 @@ public final class NetconVpnService extends VpnService {
             setState("error", message);
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
+        }
+    }
+
+    private void registerNetworkHandoffCallback(ConnectivityManager connectivity) {
+        if (connectivity == null) return;
+        unregisterNetworkHandoffCallback(connectivity);
+        try {
+            NetworkRequest request = new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build();
+            ConnectivityManager.NetworkCallback callback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(@NonNull Network network) {
+                    try {
+                        if (isPhysicalInternetNetwork(connectivity, network)) {
+                            setUnderlyingNetworks(new Network[] { network });
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                @Override
+                public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities networkCapabilities) {
+                    try {
+                        if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                            && !networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                            setUnderlyingNetworks(new Network[] { network });
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            };
+            connectivity.registerNetworkCallback(request, callback);
+            networkCallback = callback;
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void unregisterNetworkHandoffCallback(ConnectivityManager connectivity) {
+        ConnectivityManager.NetworkCallback cb = networkCallback;
+        networkCallback = null;
+        if (cb != null && connectivity != null) {
+            try {
+                connectivity.unregisterNetworkCallback(cb);
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -300,7 +421,36 @@ public final class NetconVpnService extends VpnService {
         return false;
     }
 
+    private static void stripAdvancedStreamExtensions(JSONObject config) {
+        JSONArray outbounds = config.optJSONArray("outbounds");
+        if (outbounds == null) return;
+        for (int i = 0; i < outbounds.length(); i++) {
+            JSONObject ob = outbounds.optJSONObject(i);
+            if (ob == null) continue;
+            JSONObject stream = ob.optJSONObject("streamSettings");
+            if (stream != null) {
+                stream.remove("sockopt");
+            }
+        }
+    }
+
     private static void sanitizeConfigForLocalCore(JSONObject config, File filesDir) throws Exception {
+        config.remove("netconMeta");
+        JSONArray outbounds = config.optJSONArray("outbounds");
+        if (outbounds != null) {
+            for (int i = 0; i < outbounds.length(); i++) {
+                JSONObject ob = outbounds.optJSONObject(i);
+                if (ob == null) continue;
+                if ("freedom".equalsIgnoreCase(ob.optString("protocol"))) {
+                    JSONObject settings = ob.optJSONObject("settings");
+                    if (settings != null) {
+                        settings.remove("profileProtocol");
+                        settings.remove("vnext");
+                    }
+                }
+            }
+        }
+
         boolean hasGeoIp = new File(filesDir, "geoip.dat").exists();
         boolean hasGeoSite = new File(filesDir, "geosite.dat").exists();
         JSONObject routing = config.optJSONObject("routing");
@@ -393,6 +543,10 @@ public final class NetconVpnService extends VpnService {
     }
 
     private void stopTunnel() {
+        try {
+            unregisterNetworkHandoffCallback(getSystemService(ConnectivityManager.class));
+        } catch (Exception ignored) {
+        }
         synchronized (LOCK) {
             if (coreController != null) {
                 try {
@@ -421,6 +575,7 @@ public final class NetconVpnService extends VpnService {
             previousSampleAt = 0;
             previousCoreReceivedBytes = 0;
             previousCoreSentBytes = 0;
+            consecutiveHealthFailures = 0;
         }
     }
 
@@ -447,6 +602,7 @@ public final class NetconVpnService extends VpnService {
         previousSampleAt = 0;
         previousCoreReceivedBytes = 0;
         previousCoreSentBytes = 0;
+        consecutiveHealthFailures = 0;
     }
 
     private static void broadcastStatus(Context context) {
@@ -522,12 +678,17 @@ public final class NetconVpnService extends VpnService {
         if (coreController == null || !"connected".equals(state)) {
             return;
         }
-        long downloaded = 0;
-        long uploaded = 0;
-        String sample = coreController.queryAllOutboundTrafficStats();
+        String sample;
+        try {
+            sample = coreController.queryAllOutboundTrafficStats();
+        } catch (Exception ignored) {
+            return;
+        }
         if (sample == null || sample.isEmpty()) {
             return;
         }
+        long downloaded = 0;
+        long uploaded = 0;
         String tag = primaryOutboundTag;
         for (String item : sample.split(";")) {
             String[] fields = item.split(",");
@@ -571,8 +732,15 @@ public final class NetconVpnService extends VpnService {
     }
 
     private void updateNotification(String text) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
         NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.notify(NOTIFICATION_ID, buildNotification(text));
+        if (manager != null) {
+            manager.notify(NOTIFICATION_ID, buildNotification(text));
+        }
     }
 
     private boolean isFinishing() {
